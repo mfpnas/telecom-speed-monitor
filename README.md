@@ -303,13 +303,16 @@ def write_result(tool_name, result, log_dir):
     os.makedirs(log_dir, exist_ok=True)
     filename = os.path.join(log_dir, f'{tool_name}_speed_logs.csv')
     
-    fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 
-                  'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
+    # Adicionar colunas de lat/lon do servidor
+    fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Server Lat', 'Server Lon',
+                  'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
     
     row = {
         'Server ID': result.get('server_id', ''),
         'Sponsor': result.get('sponsor', tool_name),
         'Server Name': result.get('server_name', ''),
+        'Server Lat': result.get('server_lat', 0),
+        'Server Lon': result.get('server_lon', 0),
         'Timestamp': datetime.utcnow().isoformat() + 'Z',
         'Distance': result.get('distance', 0),
         'Ping': result.get('ping', 0),
@@ -340,11 +343,14 @@ def run():
             capture_output=True, text=True, timeout=60
         )
         data = json.loads(result.stdout)
+        server = data.get('server', {})
         return {
-            'server_id': data.get('server', {}).get('id', ''),
+            'server_id': server.get('id', ''),
             'sponsor': data.get('client', {}).get('isp', 'speedtest-cli'),
-            'server_name': data.get('server', {}).get('name', ''),
-            'distance': data.get('server', {}).get('d', 0),
+            'server_name': server.get('name', ''),
+            'server_lat': float(server.get('lat', 0)),
+            'server_lon': float(server.get('lon', 0)),
+            'distance': float(server.get('d', 0)),
             'ping': data.get('ping', 0),
             'download_bps': data.get('download', 0),
             'upload_bps': data.get('upload', 0)
@@ -358,65 +364,40 @@ def run():
 ```python
 import subprocess
 import json
-import re
 
 def run():
     try:
-        # Executa o comando e captura a saída
         result = subprocess.run(
             ['npx', '--yes', 'speedtest-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
-
-        # Verifica se houve erro na execução
         if result.returncode != 0:
             print(f"librespeed returncode: {result.returncode}")
             print(f"stderr: {result.stderr}")
             return None
 
-        # Tenta fazer o parse do JSON
         output = result.stdout.strip()
         if not output:
-            print("librespeed: saída vazia")
+            print("librespeed: empty output")
             return None
 
         data = json.loads(output)
+        server = data.get('server', {})
+        client = data.get('client', {})
 
-        # Extrai os valores de download e upload
-        download_raw = data.get('download', 0)
-        upload_raw = data.get('upload', 0)
-
-        # --- CORREÇÃO: Sanitização dos valores ---
-        # Se o valor for maior que 10 Gbps (10^10 bps), provavelmente está em bytes ou Mbps.
-        # Vamos convertê-lo para bps.
-        if download_raw > 10_000_000_000:
-            print(f"librespeed: download raw ({download_raw}) parece estar em Bytes ou Mbps. Convertendo...")
-            # Tenta converter de Bytes para bits (multiplica por 8)
-            # ou de Mbps para bps (multiplica por 1_000_000)
-            # Vamos usar uma heurística: se o número for muito grande, dividimos por 1_000_000
-            # e depois multiplicamos por 1_000_000 para manter o valor em bps, mas isso é um palpite.
-            # A maneira mais segura é tentar as duas conversões e ver qual faz sentido.
-            # Vamos assumir que está em Bytes e converter para bits.
-            download_bps = download_raw * 8
-            upload_bps = upload_raw * 8
-        else:
-            download_bps = download_raw
-            upload_bps = upload_raw
-
-        # Extrai outras informações
         return {
-            'server_id': data.get('server', {}).get('id', ''),
-            'sponsor': 'LibreSpeed',
-            'server_name': data.get('server', {}).get('name', ''),
-            'distance': 0,
+            'server_id': server.get('id', ''),
+            'sponsor': server.get('sponsor', 'LibreSpeed'),
+            'server_name': server.get('name', ''),
+            'server_lat': float(server.get('lat', 0)),
+            'server_lon': float(server.get('lon', 0)),
+            'distance': float(server.get('d', 0)),
             'ping': data.get('ping', 0),
-            'download_bps': download_bps,
-            'upload_bps': upload_bps
+            'download_bps': data.get('download', 0),   # já em bps
+            'upload_bps': data.get('upload', 0),       # já em bps
         }
-
     except json.JSONDecodeError as e:
         print(f"librespeed JSON decode error: {e}")
-        print(f"Output received: {output[:200] if 'output' in locals() else 'None'}")
         return None
     except Exception as e:
         print(f"librespeed error: {e}")
@@ -439,6 +420,8 @@ def run():
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',
             'server_name': 'Fast.com Global',
+            'server_lat': 0,
+            'server_lon': 0,
             'distance': 0,
             'ping': 0,
             'download_bps': data.get('downloadSpeed', 0) * 1e6,
@@ -456,23 +439,16 @@ import json
 import random
 from collector.config import IPERF_SERVERS
 
-# Lista de fallback com servidores confiáveis do repositório R0GGER
-# Fonte: https://github.com/R0GGER/public-iperf3-servers
 DEFAULT_SERVERS = [
-    # América do Sul
-    "speedtest.uztelecom.uz",        # América do Sul[reference:12]
-    # Fallback para Europa (caso os da América do Sul falhem)
-    "iperf-ams-nl.eranium.net",      # Amsterdam[reference:13]
-    "lon.speedtest.clouvider.net",   # London[reference:14]
+    "speedtest.uztelecom.uz",
+    "iperf-ams-nl.eranium.net",
+    "lon.speedtest.clouvider.net",
 ]
 
 def run():
-    # Tenta usar servidores do .env primeiro, depois fallback
     servers = IPERF_SERVERS if IPERF_SERVERS and len(IPERF_SERVERS) > 0 else DEFAULT_SERVERS
     server = random.choice(servers)
-    
     try:
-        # Teste de Download
         result_dl = subprocess.run(
             ['iperf3', '-c', server, '-J', '-t', '10'],
             capture_output=True, text=True, timeout=60
@@ -480,7 +456,6 @@ def run():
         data_dl = json.loads(result_dl.stdout)
         download_bps = data_dl.get('end', {}).get('sum_received', {}).get('bits_per_second', 0)
         
-        # Teste de Upload (modo reverso)
         result_ul = subprocess.run(
             ['iperf3', '-c', server, '-J', '-t', '10', '-R'],
             capture_output=True, text=True, timeout=60
@@ -488,13 +463,14 @@ def run():
         data_ul = json.loads(result_ul.stdout)
         upload_bps = data_ul.get('end', {}).get('sum_received', {}).get('bits_per_second', 0)
         
-        # Extrai jitter como proxy de ping
         ping = data_dl.get('end', {}).get('streams', [{}])[0].get('sender', {}).get('jitter_ms', 0)
         
         return {
             'server_id': 'iperf3',
             'sponsor': 'iPerf3',
             'server_name': server,
+            'server_lat': 0,
+            'server_lon': 0,
             'distance': 0,
             'ping': ping,
             'download_bps': download_bps,
@@ -502,9 +478,6 @@ def run():
         }
     except subprocess.TimeoutExpired:
         print(f"iperf3 timeout: {server}")
-        return None
-    except json.JSONDecodeError as e:
-        print(f"iperf3 JSON decode error: {e}")
         return None
     except Exception as e:
         print(f"iperf3 error ({server}): {e}")
@@ -565,6 +538,7 @@ import subprocess
 import tempfile
 import base64
 import streamlit.components.v1 as components
+import pytz  # instale: pip install pytz
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
@@ -594,22 +568,31 @@ if df.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# 2. FILTERS
+# 2. TIMEZONE SELECTOR
 # ------------------------------------------------------------
+st.sidebar.header("🌐 Timezone Settings")
+timezone_str = st.sidebar.selectbox(
+    "Select Timezone",
+    ["UTC", "America/Sao_Paulo", "America/New_York", "Europe/London", "Asia/Tokyo"],
+    index=0
+)
+user_tz = pytz.timezone(timezone_str)
+
+# Converter timestamps para o timezone selecionado
+df['Timestamp_local'] = df['Timestamp'].dt.tz_convert(user_tz)
+
+# ------------------------------------------------------------
+# 3. FILTERS
+# ------------------------------------------------------------
+st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filters")
-
-# Aviso sobre librespeed (opcional)
-st.sidebar.info("💡 If 'librespeed' shows unrealistic values, uncheck it below.")
-
-tools_default = [t for t in df['Tool'].unique() if t != 'librespeed'] if 'librespeed' in df['Tool'].unique() else df['Tool'].unique()
-tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=tools_default)
-
-min_date = df['Timestamp'].min().date()
-max_date = df['Timestamp'].max().date()
+tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
+min_date = df['Timestamp_local'].min().date()
+max_date = df['Timestamp_local'].max().date()
 start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date)
 end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date)
 
-mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
+mask = (df['Tool'].isin(tools)) & (df['Timestamp_local'].dt.date >= start_date) & (df['Timestamp_local'].dt.date <= end_date)
 filtered = df[mask].copy()
 
 if filtered.empty:
@@ -617,11 +600,10 @@ if filtered.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# 3. AUTO REFRESH
+# 4. AUTO REFRESH
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
-
 refresh_interval = st.sidebar.selectbox(
     "Refresh interval",
     ["Off", "1 minute", "5 minutes", "10 minutes"],
@@ -638,7 +620,7 @@ if st.sidebar.button("Refresh Now"):
     st.rerun()
 
 # ------------------------------------------------------------
-# 4. QUICK METRICS (com 3 casas decimais e unidade Mbps)
+# 5. QUICK METRICS
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
@@ -657,17 +639,29 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
-# 5. TABS
+# 6. TABS
 # ------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Series", "📊 Boxplot", "📉 Scatter", "📅 Throttling", "📋 Raw Data"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📈 Time Series", "📊 Boxplot", "📉 Scatter",
+    "📅 Throttling", "🗺️ Server Map", "📋 Raw Data"
+])
 
 with tab1:
-    fig1 = px.line(filtered, x='Timestamp', y='Download', color='Tool',
+    # Ajustar eixo X para mostrar pontos a cada 5 minutos (usando range breaks ou dt.hour)
+    fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
                    title='Download Evolution (bps)')
+    fig1.update_xaxes(
+        tickformat="%H:%M\n%m/%d",
+        dtick=300000  # 5 minutos em milissegundos (300000 ms)
+    )
     st.plotly_chart(fig1, use_container_width=True)
     
-    fig2 = px.line(filtered, x='Timestamp', y='Upload', color='Tool',
+    fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
+    fig2.update_xaxes(
+        tickformat="%H:%M\n%m/%d",
+        dtick=300000
+    )
     st.plotly_chart(fig2, use_container_width=True)
 
 with tab2:
@@ -681,33 +675,58 @@ with tab2:
 
 with tab3:
     fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
-                      hover_data=['Timestamp', 'Server Name'],
+                      hover_data=['Timestamp_local', 'Server Name'],
                       title='Ping vs Download (bps)')
     st.plotly_chart(fig5, use_container_width=True)
 
 with tab4:
-    filtered['DayOfWeek'] = filtered['Timestamp'].dt.day_name()
+    filtered['DayOfWeek'] = filtered['Timestamp_local'].dt.day_name()
     filtered['IsWeekend'] = filtered['DayOfWeek'].isin(['Saturday', 'Sunday'])
     aggr = filtered.groupby(['Tool', 'IsWeekend'])['Download'].mean().reset_index()
     aggr['Period'] = aggr['IsWeekend'].map({True: 'Weekend', False: 'Weekday'})
-    aggr['Download_Mbps'] = aggr['Download'] / 1e6  # Converter para Mbps
+    aggr['Download_Mbps'] = aggr['Download'] / 1e6
     
     fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
                   title='Avg Download (Mbps): Weekday vs Weekend (Throttling Detection)')
     st.plotly_chart(fig6, use_container_width=True)
 
 with tab5:
-    st.dataframe(filtered[['Timestamp', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
+    # Mapa de servidores
+    st.subheader("🌍 Server Locations")
+    # Filtrar servidores com lat/lon válidos (diferente de 0)
+    server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
+        subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
+    )
+    if not server_locations.empty:
+        fig_map = px.scatter_mapbox(
+            server_locations,
+            lat='Server Lat',
+            lon='Server Lon',
+            color='Tool',
+            hover_name='Server Name',
+            hover_data=['Sponsor', 'Distance'],
+            title='Servers Used for Tests',
+            mapbox_style='open-street-map',
+            zoom=4,
+            height=500
+        )
+        fig_map.update_layout(mapbox_style="open-street-map")
+        st.plotly_chart(fig_map, use_container_width=True)
+    else:
+        st.info("No server location data available. Only speedtest-cli and librespeed provide this.")
+
+with tab6:
+    st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 6. EXPORT FOR PDF REPORT
+# 7. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
 
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
-    client_name = st.text_input("Client Name", "Mauricio Faria Palma Nascimento")
+    client_name = st.text_input("Client Name", "John Doe")
     isp_name = st.text_input("ISP Name", "VIVO")
     plan_name = st.text_input("Plan Name", "VIVO TOTAL – PRO (500/250 Mbps)")
     attorney_name = st.text_input("Attorney Name (optional)", "")

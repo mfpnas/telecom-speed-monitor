@@ -12,6 +12,8 @@ def run():
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',
             'server_name': 'Fast.com Global',
+            'server_lat': 0,
+            'server_lon': 0,
             'distance': 0,
             'ping': 0,
             'download_bps': data.get('downloadSpeed', 0) * 1e6,
