@@ -164,24 +164,16 @@ ARG GROUP_ID=1000
 RUN groupadd -g ${GROUP_ID} appuser && \
     useradd -m -u ${USER_ID} -g appuser appuser
 
-# Instala dependências do sistema, incluindo o Google Chrome
+# Instala dependências do sistema, incluindo Chromium
 RUN apt-get update && apt-get install -y \
     curl \
     npm \
     iperf3 \
-    wget \
-    gnupg \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala o Google Chrome Stable
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
-    sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
-# Define o caminho do Chrome para o Puppeteer
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# Configura Puppeteer para usar o Chromium instalado
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Instala speedtest-cli via pip
