@@ -18,7 +18,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 RUN pip install speedtest-cli
 RUN npm install -g fast-cli
 
-WORKDIR /app   # <--- CORRIGIDO: agora usa /app
+WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
@@ -26,7 +26,8 @@ RUN pip install -r requirements.txt
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-RUN chown -R appuser:appuser /app
+# Cria o diretório /app (se não existir) e ajusta as permissões
+RUN mkdir -p /app && chown -R appuser:appuser /app
 
 USER appuser
 

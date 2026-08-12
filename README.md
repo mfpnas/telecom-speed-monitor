@@ -188,7 +188,7 @@ RUN pip install speedtest-cli
 # Instala fast-cli via npm
 RUN npm install -g fast-cli
 
-WORKDIR /data
+WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
@@ -196,7 +196,8 @@ RUN pip install -r requirements.txt
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-RUN chown -R appuser:appuser /app
+# Cria o diretório /app (se não existir) e ajusta as permissões
+RUN mkdir -p /app && chown -R appuser:appuser /app
 
 USER appuser
 
