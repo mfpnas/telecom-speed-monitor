@@ -12,11 +12,51 @@ import pytz
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
-LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')   # <--- CORRIGIDO
+LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')
 st.title("📡 Telecom Speed Monitor Dashboard")
 
 # ------------------------------------------------------------
-# 1. LOAD DATA (compatível com diferentes estruturas de CSV)
+# 1. BRAZILIAN TELECOM PLANS DATASET
+# ------------------------------------------------------------
+PLANS = {
+    "VIVO": [
+        {"name": "VIVO TOTAL – PRO (500/250 Mbps)", "download": 500, "upload": 250},
+        {"name": "VIVO TOTAL – MAX (300/150 Mbps)", "download": 300, "upload": 150},
+        {"name": "VIVO TOTAL – SMART (100/50 Mbps)", "download": 100, "upload": 50},
+        {"name": "VIVO FIBRA 700 Mbps", "download": 700, "upload": 350},
+        {"name": "VIVO FIBRA 200 Mbps", "download": 200, "upload": 100},
+    ],
+    "Claro": [
+        {"name": "Claro Fibra 500 Mbps", "download": 500, "upload": 250},
+        {"name": "Claro Fibra 300 Mbps", "download": 300, "upload": 150},
+        {"name": "Claro Fibra 120 Mbps", "download": 120, "upload": 60},
+        {"name": "Claro Fibra 50 Mbps", "download": 50, "upload": 25},
+    ],
+    "TIM": [
+        {"name": "TIM LIVE 500 Mbps", "download": 500, "upload": 250},
+        {"name": "TIM LIVE 300 Mbps", "download": 300, "upload": 150},
+        {"name": "TIM LIVE 100 Mbps", "download": 100, "upload": 50},
+    ],
+    "Oi": [
+        {"name": "Oi Fibra 500 Mbps", "download": 500, "upload": 250},
+        {"name": "Oi Fibra 300 Mbps", "download": 300, "upload": 150},
+        {"name": "Oi Fibra 100 Mbps", "download": 100, "upload": 50},
+    ],
+    "Algar": [
+        {"name": "Algar Fibra 500 Mbps", "download": 500, "upload": 250},
+        {"name": "Algar Fibra 300 Mbps", "download": 300, "upload": 150},
+    ],
+}
+
+# Default values
+DEFAULT_ISP = "VIVO"
+DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
+DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
+DEFAULT_TZ = "America/Sao_Paulo"
+DEFAULT_REFRESH = "1 minute"
+
+# ------------------------------------------------------------
+# 2. LOAD DATA
 # ------------------------------------------------------------
 @st.cache_data(ttl=300)
 def load_data():
@@ -25,36 +65,25 @@ def load_data():
     for f in all_files:
         tool = os.path.basename(f).replace('_speed_logs.csv', '')
         try:
-            # Tenta ler normalmente
             df = pd.read_csv(f)
         except pd.errors.ParserError:
-            # Se houver erro de parsing, usa on_bad_lines='skip' para ignorar linhas problemáticas
             df = pd.read_csv(f, on_bad_lines='skip')
-        
         if df.empty:
             continue
-        
         df['Tool'] = tool
-        
-        # Normalizar coluna de timestamp
         if 'Timestamp' in df.columns:
             df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         elif 'timestamp' in df.columns:
             df.rename(columns={'timestamp': 'Timestamp'}, inplace=True)
             df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         else:
-            # Fallback: usa a data de modificação do arquivo (não ideal, mas evita quebra)
             mtime = os.path.getmtime(f)
             df['Timestamp'] = pd.to_datetime(mtime, unit='s', utc=True)
-        
-        # Garantir colunas de lat/lon
         if 'Server Lat' not in df.columns:
             df['Server Lat'] = 0.0
         if 'Server Lon' not in df.columns:
             df['Server Lon'] = 0.0
-        
         dfs.append(df)
-    
     if not dfs:
         return pd.DataFrame()
     return pd.concat(dfs, ignore_index=True)
@@ -65,13 +94,13 @@ if df.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# 2. TIMEZONE SELECTOR
+# 3. TIMEZONE SELECTOR (default America/Sao_Paulo)
 # ------------------------------------------------------------
 st.sidebar.header("🌐 Timezone Settings")
 timezone_str = st.sidebar.selectbox(
     "Select Timezone",
     ["UTC", "America/Sao_Paulo", "America/New_York", "Europe/London", "Asia/Tokyo"],
-    index=0
+    index=1  # America/Sao_Paulo
 )
 try:
     user_tz = pytz.timezone(timezone_str)
@@ -80,7 +109,7 @@ except Exception:
     df['Timestamp_local'] = df['Timestamp']
 
 # ------------------------------------------------------------
-# 3. FILTERS
+# 4. FILTERS
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filters")
@@ -98,14 +127,14 @@ if filtered.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# 4. AUTO REFRESH
+# 5. AUTO REFRESH (default 1 minute)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
 refresh_interval = st.sidebar.selectbox(
     "Refresh interval",
     ["Off", "1 minute", "5 minutes", "10 minutes"],
-    index=0
+    index=1  # 1 minute
 )
 auto_refresh = refresh_interval != "Off"
 if auto_refresh:
@@ -118,7 +147,7 @@ if st.sidebar.button("Refresh Now"):
     st.rerun()
 
 # ------------------------------------------------------------
-# 5. QUICK METRICS
+# 6. QUICK METRICS
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
@@ -137,7 +166,7 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
-# 6. TABS
+# 7. TABS
 # ------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Time Series", "📊 Boxplot", "📉 Scatter",
@@ -183,7 +212,6 @@ with tab4:
 
 with tab5:
     st.subheader("🌍 Server Locations")
-    # Filtrar apenas registros com lat/lon diferentes de 0
     server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
         subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
     )
@@ -209,22 +237,34 @@ with tab6:
     st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 7. EXPORT FOR PDF REPORT
+# 8. EXPORT FOR PDF REPORT (with All Tools option)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
 
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
-    client_name = st.text_input("Client Name", "John Doe")
-    isp_name = st.text_input("ISP Name", "VIVO")
-    plan_name = st.text_input("Plan Name", "VIVO TOTAL – PRO (500/250 Mbps)")
+    client_name = st.text_input("Client Name", DEFAULT_CLIENT)
+    
+    # ISP dropdown
+    isp_list = list(PLANS.keys())
+    isp_name = st.selectbox("ISP Name", isp_list, index=isp_list.index(DEFAULT_ISP))
+    
+    # Plan dropdown based on selected ISP
+    plans = PLANS[isp_name]
+    plan_names = [p['name'] for p in plans]
+    default_plan_index = plan_names.index(DEFAULT_PLAN) if DEFAULT_PLAN in plan_names else 0
+    plan_name = st.selectbox("Plan Name", plan_names, index=default_plan_index)
+    
     attorney_name = st.text_input("Attorney Name (optional)", "")
     address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil")
     
     st.markdown("### Select Data Period")
     export_days = st.slider("Last N days", 1, 30, 7)
-    export_tool = st.selectbox("Tool to export", df['Tool'].unique())
+    
+    # Tool selection: include "All Tools" option
+    tool_options = list(df['Tool'].unique()) + ["All Tools"]
+    export_tool = st.selectbox("Tool to export", tool_options, index=0)
     
     uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
     
@@ -233,11 +273,20 @@ with st.sidebar.form("pdf_report_form"):
     if submitted:
         with st.spinner("Generating report..."):
             threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
-            mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)
-            export_df = df[mask_export].copy()
+            
+            if export_tool == "All Tools":
+                export_df = df[df['Timestamp'] >= threshold].copy()
+            else:
+                export_df = df[(df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)].copy()
+            
             if export_df.empty:
                 st.error("No data for the selected period and tool.")
                 st.stop()
+            
+            # Ensure required columns exist
+            for col in ['Server ID', 'Sponsor', 'Server Name', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']:
+                if col not in export_df.columns:
+                    export_df[col] = ''
             
             with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
                 export_df.to_csv(tmp_csv.name, index=False)
