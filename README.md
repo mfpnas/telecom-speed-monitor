@@ -366,14 +366,16 @@ def run():
             capture_output=True, text=True, timeout=60
         )
         data = json.loads(result.stdout)
+        download_mbps = data.get('download', 0)
+        upload_mbps = data.get('upload', 0)
         return {
             'server_id': data.get('server', {}).get('id', ''),
             'sponsor': 'LibreSpeed',
             'server_name': data.get('server', {}).get('name', ''),
             'distance': 0,
             'ping': data.get('ping', 0),
-            'download_bps': data.get('download', 0) * 1e6,
-            'upload_bps': data.get('upload', 0) * 1e6
+            'download_bps': download_mbps * 1e6,
+            'upload_bps': upload_mbps * 1e6
         }
     except Exception as e:
         print(f"librespeed error: {e}")
@@ -391,25 +393,20 @@ def run():
             ['npx', '--yes', 'fast-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
-        # Verifica se a saída está vazia
-        if not result.stdout.strip():
-            print("fast-cli: Saída vazia, tentando novamente...")
-            return None
         data = json.loads(result.stdout)
+        download_mbps = data.get('downloadSpeed', 0)
+        upload_mbps = data.get('uploadSpeed', 0)
         return {
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',
             'server_name': 'Fast.com Global',
             'distance': 0,
             'ping': 0,
-            'download_bps': data.get('downloadSpeed', 0),
-            'upload_bps': data.get('uploadSpeed', 0)
+            'download_bps': download_mbps * 1e6,
+            'upload_bps': upload_mbps * 1e6
         }
-    except json.JSONDecodeError as e:
-        print(f"fast-cli JSON inválido: {e}")
-        return None
     except Exception as e:
-        print(f"fast-cli erro: {e}")
+        print(f"fast-cli error: {e}")
         return None
 ```
 
@@ -524,8 +521,10 @@ import pandas as pd
 import os
 import glob
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import subprocess
+import tempfile
+import base64
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
@@ -557,10 +556,8 @@ if df.empty:
 # ------------------------------------------------------------
 # 2. FILTERS
 # ------------------------------------------------------------
-st.sidebar.header("🔍 Advanced Filters")
-
+st.sidebar.header("🔍 Filters")
 tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
-
 min_date = df['Timestamp'].min().date()
 max_date = df['Timestamp'].max().date()
 start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date)
@@ -630,26 +627,83 @@ with tab5:
     st.dataframe(filtered[['Timestamp', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 5. EXPORT
+# 5. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
-st.sidebar.subheader("📄 Export for PDF Report")
+st.sidebar.subheader("📄 Generate PDF Report")
 
-export_tool = st.sidebar.selectbox("Tool to export", df['Tool'].unique())
-export_days = st.sidebar.slider("Last N days", 1, 30, 7)
-
-if st.sidebar.button("Generate CSV"):
-    mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= datetime.now() - timedelta(days=export_days))
-    export_df = df[mask_export].copy()
-    cols = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
-    export_df = export_df[cols].fillna('')
-    csv = export_df.to_csv(index=False)
-    st.sidebar.download_button(
-        label="Download CSV",
-        data=csv,
-        file_name=f"{export_tool}_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
+# Formulário para relatório
+with st.sidebar.form("pdf_report_form"):
+    st.markdown("### Personal Information")
+    client_name = st.text_input("Client Name", "John Doe")
+    isp_name = st.text_input("ISP Name", "VIVO")
+    plan_name = st.text_input("Plan Name", "VIVO TOTAL – PRO (500/250 Mbps)")
+    attorney_name = st.text_input("Attorney Name (optional)", "")
+    address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil")
+    
+    st.markdown("### Select Data Period")
+    export_days = st.slider("Last N days", 1, 30, 7)
+    export_tool = st.selectbox("Tool to export", df['Tool'].unique())
+    
+    # Upload de fatura (opcional)
+    uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
+    
+    submitted = st.form_submit_button("Generate PDF Report")
+    
+    if submitted:
+        with st.spinner("Generating report..."):
+            # Filtrar dados
+            mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= datetime.now() - timedelta(days=export_days))
+            export_df = df[mask_export].copy()
+            if export_df.empty:
+                st.error("No data for the selected period and tool.")
+                st.stop()
+            
+            # Salvar CSV temporário
+            with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
+                export_df.to_csv(tmp_csv.name, index=False)
+                csv_path = tmp_csv.name
+            
+            # Salvar fatura se enviada
+            bill_path = None
+            if uploaded_file is not None:
+                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+                    tmp_pdf.write(uploaded_file.read())
+                    bill_path = tmp_pdf.name
+            
+            # Gerar relatório PDF usando o script
+            # (assumindo que o script está em /app/scripts/generate_pdf_report.py)
+            cmd = [
+                'python', '-u', '/app/scripts/generate_pdf_report.py',
+                '--csv', csv_path,
+                '--client', client_name,
+                '--isp', isp_name,
+                '--plan', plan_name,
+                '--attorney', attorney_name,
+                '--address', address,
+                '--output', '/tmp/report.pdf'
+            ]
+            if bill_path:
+                cmd.extend(['--bill', bill_path])
+            
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode == 0:
+                    with open('/tmp/report.pdf', 'rb') as f:
+                        pdf_bytes = f.read()
+                    b64 = base64.b64encode(pdf_bytes).decode()
+                    href = f'<a href="data:application/pdf;base64,{b64}" download="report.pdf">Download PDF Report</a>'
+                    st.sidebar.markdown(href, unsafe_allow_html=True)
+                    st.sidebar.success("PDF generated successfully!")
+                else:
+                    st.sidebar.error(f"PDF generation failed: {result.stderr}")
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
+            finally:
+                # Limpar arquivos temporários
+                os.unlink(csv_path)
+                if bill_path:
+                    os.unlink(bill_path)
 ```
 
 ---

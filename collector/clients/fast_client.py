@@ -1,42 +1,24 @@
 import subprocess
 import json
-import re
 
 def run():
     try:
-        # Executa o fast-cli com npx
         result = subprocess.run(
             ['npx', '--yes', 'fast-cli', '--json'],
-            capture_output=True,
-            text=True,
-            timeout=60
+            capture_output=True, text=True, timeout=60
         )
-        # Verifica se houve erro na execução
-        if result.returncode != 0:
-            print(f"fast-cli returncode: {result.returncode}")
-            print(f"stderr: {result.stderr}")
-            return None
-
-        # Tenta fazer o parse do JSON
-        output = result.stdout.strip()
-        if not output:
-            print("fast-cli: saída vazia")
-            return None
-
-        data = json.loads(output)
+        data = json.loads(result.stdout)
+        download_mbps = data.get('downloadSpeed', 0)
+        upload_mbps = data.get('uploadSpeed', 0)
         return {
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',
             'server_name': 'Fast.com Global',
             'distance': 0,
             'ping': 0,
-            'download_bps': data.get('downloadSpeed', 0),
-            'upload_bps': data.get('uploadSpeed', 0)
+            'download_bps': download_mbps * 1e6,
+            'upload_bps': upload_mbps * 1e6
         }
-    except json.JSONDecodeError as e:
-        print(f"fast-cli JSON decode error: {e}")
-        print(f"Output received: {result.stdout[:200] if result else 'None'}")
-        return None
     except Exception as e:
-        print(f"fast-cli erro: {e}")
+        print(f"fast-cli error: {e}")
         return None

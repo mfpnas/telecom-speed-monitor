@@ -3,16 +3,18 @@ import pandas as pd
 import os
 import glob
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import subprocess
+import tempfile
+import base64
 
-st.set_page_config(layout="wide", page_title="Telemetry Monitor")
+st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
 LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')
-st.title("📡 Telecom Telemetry Dashboard")
+st.title("📡 Telecom Speed Monitor Dashboard")
 
 # ------------------------------------------------------------
-# 1. CARREGAR DADOS
+# 1. LOAD DATA
 # ------------------------------------------------------------
 @st.cache_data(ttl=300)
 def load_data():
@@ -30,116 +32,157 @@ def load_data():
 
 df = load_data()
 if df.empty:
-    st.warning("Nenhum dado encontrado. Aguarde a coleta.")
+    st.warning("No data found. Waiting for collector to start.")
     st.stop()
 
 # ------------------------------------------------------------
-# 2. FILTROS
+# 2. FILTERS
 # ------------------------------------------------------------
-st.sidebar.header("🔍 Filtros Avançados")
-
-# Seleção de ferramentas
-tools = st.sidebar.multiselect("Ferramentas", df['Tool'].unique(), default=df['Tool'].unique())
-
-# Intervalo de datas
-col1, col2 = st.sidebar.columns(2)
+st.sidebar.header("🔍 Filters")
+tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
 min_date = df['Timestamp'].min().date()
 max_date = df['Timestamp'].max().date()
-start_date = col1.date_input("Início", min_date, min_value=min_date, max_value=max_date)
-end_date = col2.date_input("Fim", max_date, min_value=min_date, max_value=max_date)
+start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date)
+end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date)
 
-# Filtragem
 mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
 filtered = df[mask].copy()
 
 if filtered.empty:
-    st.warning("Nenhum dado com os filtros selecionados.")
+    st.warning("No data with selected filters.")
     st.stop()
 
 # ------------------------------------------------------------
-# 3. MÉTRICAS RÁPIDAS
+# 3. QUICK METRICS
 # ------------------------------------------------------------
-st.subheader("📊 Resumo Geral")
+st.subheader("📊 Summary")
 col_metrics = st.columns(4)
 with col_metrics[0]:
-    st.metric("Testes Totais", len(filtered))
+    st.metric("Total Tests", len(filtered))
 with col_metrics[1]:
-    st.metric("Download Médio (Mbps)", f"{filtered['Download'].mean()/1e6:.1f}")
+    st.metric("Avg Download", f"{filtered['Download'].mean()/1e6:.1f} Mbps")
 with col_metrics[2]:
-    st.metric("Upload Médio (Mbps)", f"{filtered['Upload'].mean()/1e6:.1f}")
+    st.metric("Avg Upload", f"{filtered['Upload'].mean()/1e6:.1f} Mbps")
 with col_metrics[3]:
-    st.metric("Ping Médio (ms)", f"{filtered['Ping'].mean():.1f}")
+    st.metric("Avg Ping", f"{filtered['Ping'].mean():.1f} ms")
 
 # ------------------------------------------------------------
-# 4. GRÁFICOS INTERATIVOS
+# 4. TABS
 # ------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Evolução Temporal", "📊 Boxplot", "📉 Dispersão", "📅 Throttling", "📋 Tabela Bruta"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Series", "📊 Boxplot", "📉 Scatter", "📅 Throttling", "📋 Raw Data"])
 
 with tab1:
-    # Download
     fig1 = px.line(filtered, x='Timestamp', y='Download', color='Tool',
-                   title='Evolução do Download (bps)')
+                   title='Download Evolution (bps)')
     st.plotly_chart(fig1, use_container_width=True)
     
-    # Upload
     fig2 = px.line(filtered, x='Timestamp', y='Upload', color='Tool',
-                   title='Evolução do Upload (bps)')
+                   title='Upload Evolution (bps)')
     st.plotly_chart(fig2, use_container_width=True)
 
 with tab2:
     fig3 = px.box(filtered, x='Tool', y='Download', color='Tool',
-                  title='Distribuição de Download por Ferramenta')
+                  title='Download Distribution by Tool')
     st.plotly_chart(fig3, use_container_width=True)
     
     fig4 = px.box(filtered, x='Tool', y='Ping', color='Tool',
-                  title='Distribuição de Ping por Ferramenta')
+                  title='Ping Distribution by Tool')
     st.plotly_chart(fig4, use_container_width=True)
 
 with tab3:
     fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
                       hover_data=['Timestamp', 'Server Name'],
-                      title='Relação Ping vs Download')
+                      title='Ping vs Download')
     st.plotly_chart(fig5, use_container_width=True)
 
 with tab4:
-    # Throttling: comparação fim de semana vs dia útil
     filtered['DayOfWeek'] = filtered['Timestamp'].dt.day_name()
     filtered['IsWeekend'] = filtered['DayOfWeek'].isin(['Saturday', 'Sunday'])
     aggr = filtered.groupby(['Tool', 'IsWeekend'])['Download'].mean().reset_index()
-    aggr['Period'] = aggr['IsWeekend'].map({True: 'Fim de Semana', False: 'Dia Útil'})
+    aggr['Period'] = aggr['IsWeekend'].map({True: 'Weekend', False: 'Weekday'})
     
     fig6 = px.bar(aggr, x='Tool', y='Download', color='Period', barmode='group',
-                  title='Download Médio: Dias Úteis vs Fins de Semana')
+                  title='Avg Download: Weekday vs Weekend (Throttling Detection)')
     st.plotly_chart(fig6, use_container_width=True)
 
 with tab5:
     st.dataframe(filtered[['Timestamp', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 5. EXPORTAÇÃO PARA O RELATÓRIO PDF
+# 5. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
-st.sidebar.subheader("📄 Exportar para Relatório")
+st.sidebar.subheader("📄 Generate PDF Report")
 
-# Selecionar período e ferramenta
-export_tool = st.sidebar.selectbox("Ferramenta para exportar", df['Tool'].unique())
-export_days = st.sidebar.slider("Últimos dias", 1, 30, 7)
-
-if st.sidebar.button("Gerar CSV Padronizado"):
-    mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= datetime.now() - timedelta(days=export_days))
-    export_df = df[mask_export].copy()
+# Formulário para relatório
+with st.sidebar.form("pdf_report_form"):
+    st.markdown("### Personal Information")
+    client_name = st.text_input("Client Name", "John Doe")
+    isp_name = st.text_input("ISP Name", "VIVO")
+    plan_name = st.text_input("Plan Name", "VIVO TOTAL – PRO (500/250 Mbps)")
+    attorney_name = st.text_input("Attorney Name (optional)", "")
+    address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil")
     
-    # Mantém colunas exatas do relatório
-    cols = ['Server ID', 'Sponsor', 'Server Name', 'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
-    export_df = export_df[cols]
+    st.markdown("### Select Data Period")
+    export_days = st.slider("Last N days", 1, 30, 7)
+    export_tool = st.selectbox("Tool to export", df['Tool'].unique())
     
-    # Substitui valores NaN/None
-    export_df = export_df.fillna('')
+    # Upload de fatura (opcional)
+    uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
     
-    csv = export_df.to_csv(index=False)
-    st.sideber.download_button(
-        label="Baixar CSV",
-        data=csv,
-        file_name=f"{export_tool}_export_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
+    submitted = st.form_submit_button("Generate PDF Report")
+    
+    if submitted:
+        with st.spinner("Generating report..."):
+            # Filtrar dados
+            mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= datetime.now() - timedelta(days=export_days))
+            export_df = df[mask_export].copy()
+            if export_df.empty:
+                st.error("No data for the selected period and tool.")
+                st.stop()
+            
+            # Salvar CSV temporário
+            with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
+                export_df.to_csv(tmp_csv.name, index=False)
+                csv_path = tmp_csv.name
+            
+            # Salvar fatura se enviada
+            bill_path = None
+            if uploaded_file is not None:
+                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+                    tmp_pdf.write(uploaded_file.read())
+                    bill_path = tmp_pdf.name
+            
+            # Gerar relatório PDF usando o script
+            # (assumindo que o script está em /app/scripts/generate_pdf_report.py)
+            cmd = [
+                'python', '-u', '/app/scripts/generate_pdf_report.py',
+                '--csv', csv_path,
+                '--client', client_name,
+                '--isp', isp_name,
+                '--plan', plan_name,
+                '--attorney', attorney_name,
+                '--address', address,
+                '--output', '/tmp/report.pdf'
+            ]
+            if bill_path:
+                cmd.extend(['--bill', bill_path])
+            
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode == 0:
+                    with open('/tmp/report.pdf', 'rb') as f:
+                        pdf_bytes = f.read()
+                    b64 = base64.b64encode(pdf_bytes).decode()
+                    href = f'<a href="data:application/pdf;base64,{b64}" download="report.pdf">Download PDF Report</a>'
+                    st.sidebar.markdown(href, unsafe_allow_html=True)
+                    st.sidebar.success("PDF generated successfully!")
+                else:
+                    st.sidebar.error(f"PDF generation failed: {result.stderr}")
+            except Exception as e:
+                st.sidebar.error(f"Error: {e}")
+            finally:
+                # Limpar arquivos temporários
+                os.unlink(csv_path)
+                if bill_path:
+                    os.unlink(bill_path)
