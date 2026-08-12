@@ -40,7 +40,13 @@ if df.empty:
 # 2. FILTERS
 # ------------------------------------------------------------
 st.sidebar.header("🔍 Filters")
-tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
+
+# Aviso sobre librespeed (opcional)
+st.sidebar.info("💡 If 'librespeed' shows unrealistic values, uncheck it below.")
+
+tools_default = [t for t in df['Tool'].unique() if t != 'librespeed'] if 'librespeed' in df['Tool'].unique() else df['Tool'].unique()
+tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=tools_default)
+
 min_date = df['Timestamp'].min().date()
 max_date = df['Timestamp'].max().date()
 start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date)
@@ -75,12 +81,11 @@ if st.sidebar.button("Refresh Now"):
     st.rerun()
 
 # ------------------------------------------------------------
-# 4. QUICK METRICS
+# 4. QUICK METRICS (com 3 casas decimais e unidade Mbps)
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
 
-# Converter para Mbps (dividindo por 1e6)
 avg_dl_mbps = filtered['Download'].mean() / 1e6
 avg_ul_mbps = filtered['Upload'].mean() / 1e6
 avg_ping = filtered['Ping'].mean()
@@ -88,9 +93,9 @@ avg_ping = filtered['Ping'].mean()
 with col_metrics[0]:
     st.metric("Total Tests", len(filtered))
 with col_metrics[1]:
-    st.metric("Avg Download", f"{avg_dl_mbps:.1f} Mbps")
+    st.metric("Avg Download", f"{avg_dl_mbps:.3f} Mbps")
 with col_metrics[2]:
-    st.metric("Avg Upload", f"{avg_ul_mbps:.1f} Mbps")
+    st.metric("Avg Upload", f"{avg_ul_mbps:.3f} Mbps")
 with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
@@ -100,12 +105,10 @@ with col_metrics[3]:
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Series", "📊 Boxplot", "📉 Scatter", "📅 Throttling", "📋 Raw Data"])
 
 with tab1:
-    # Download Time Series
     fig1 = px.line(filtered, x='Timestamp', y='Download', color='Tool',
                    title='Download Evolution (bps)')
     st.plotly_chart(fig1, use_container_width=True)
     
-    # Upload Time Series
     fig2 = px.line(filtered, x='Timestamp', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
     st.plotly_chart(fig2, use_container_width=True)
@@ -126,12 +129,11 @@ with tab3:
     st.plotly_chart(fig5, use_container_width=True)
 
 with tab4:
-    # Throttling detection
     filtered['DayOfWeek'] = filtered['Timestamp'].dt.day_name()
     filtered['IsWeekend'] = filtered['DayOfWeek'].isin(['Saturday', 'Sunday'])
     aggr = filtered.groupby(['Tool', 'IsWeekend'])['Download'].mean().reset_index()
     aggr['Period'] = aggr['IsWeekend'].map({True: 'Weekend', False: 'Weekday'})
-    aggr['Download_Mbps'] = aggr['Download'] / 1e6  # Converter para Mbps para melhor visualização
+    aggr['Download_Mbps'] = aggr['Download'] / 1e6  # Converter para Mbps
     
     fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
                   title='Avg Download (Mbps): Weekday vs Weekend (Throttling Detection)')
