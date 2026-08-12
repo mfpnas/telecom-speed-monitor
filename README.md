@@ -158,16 +158,22 @@ IPERF_SERVERS=iperf.he.net,iperf.ovh.net,ping.online.net
 ```dockerfile
 FROM python:3.11-slim
 
+# Cria um usuário não-root com UID 1000 (igual ao seu usuário no host)
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -g ${GROUP_ID} appuser && \
+    useradd -m -u ${USER_ID} -g appuser appuser
+
 RUN apt-get update && apt-get install -y \
     curl \
     npm \
     iperf3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install speedtest-cli via pip
+# Instala speedtest-cli via pip
 RUN pip install speedtest-cli
 
-# Install fast-cli via npm
+# Instala fast-cli via npm
 RUN npm install -g fast-cli
 
 WORKDIR /app
@@ -178,7 +184,13 @@ RUN pip install -r requirements.txt
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-CMD ["python", "-m", "collector.main"]
+# Altera o proprietário dos arquivos para o novo usuário
+RUN chown -R appuser:appuser /app
+
+# Muda para o usuário não-root
+USER appuser
+
+CMD ["python", "-u", "-m", "collector.main"]
 ```
 
 #### `Dockerfile.dashboard`
