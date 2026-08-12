@@ -143,6 +143,7 @@ requests
 python-dotenv
 schedule
 pytz
+reportlab
 ```
 
 #### `.env.example` (optional)
