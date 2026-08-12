@@ -366,16 +366,14 @@ def run():
             capture_output=True, text=True, timeout=60
         )
         data = json.loads(result.stdout)
-        download_mbps = data.get('download', 0)
-        upload_mbps = data.get('upload', 0)
         return {
             'server_id': data.get('server', {}).get('id', ''),
             'sponsor': 'LibreSpeed',
             'server_name': data.get('server', {}).get('name', ''),
             'distance': 0,
             'ping': data.get('ping', 0),
-            'download_bps': download_mbps * 1e6,
-            'upload_bps': upload_mbps * 1e6
+            'download_bps': data.get('download', 0),  # já em bps
+            'upload_bps': data.get('upload', 0)       # já em bps
         }
     except Exception as e:
         print(f"librespeed error: {e}")
@@ -394,16 +392,14 @@ def run():
             capture_output=True, text=True, timeout=60
         )
         data = json.loads(result.stdout)
-        download_mbps = data.get('downloadSpeed', 0)
-        upload_mbps = data.get('uploadSpeed', 0)
         return {
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',
             'server_name': 'Fast.com Global',
             'distance': 0,
             'ping': 0,
-            'download_bps': download_mbps * 1e6,
-            'upload_bps': upload_mbps * 1e6
+            'download_bps': data.get('downloadSpeed', 0) * 1e6,
+            'upload_bps': data.get('uploadSpeed', 0) * 1e6
         }
     except Exception as e:
         print(f"fast-cli error: {e}")
@@ -578,7 +574,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
 
 refresh_interval = st.sidebar.selectbox(
-    "Refresh interval", 
+    "Refresh interval",
     ["Off", "1 minute", "5 minutes", "10 minutes"],
     index=0
 )
@@ -597,14 +593,20 @@ if st.sidebar.button("Refresh Now"):
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
+
+# Converter para Mbps (dividindo por 1e6)
+avg_dl_mbps = filtered['Download'].mean() / 1e6
+avg_ul_mbps = filtered['Upload'].mean() / 1e6
+avg_ping = filtered['Ping'].mean()
+
 with col_metrics[0]:
     st.metric("Total Tests", len(filtered))
 with col_metrics[1]:
-    st.metric("Avg Download", f"{filtered['Download'].mean()/1e6:.1f} Mbps")
+    st.metric("Avg Download", f"{avg_dl_mbps:.1f} Mbps")
 with col_metrics[2]:
-    st.metric("Avg Upload", f"{filtered['Upload'].mean()/1e6:.1f} Mbps")
+    st.metric("Avg Upload", f"{avg_ul_mbps:.1f} Mbps")
 with col_metrics[3]:
-    st.metric("Avg Ping", f"{filtered['Ping'].mean():.1f} ms")
+    st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
 # 5. TABS
@@ -612,10 +614,12 @@ with col_metrics[3]:
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Series", "📊 Boxplot", "📉 Scatter", "📅 Throttling", "📋 Raw Data"])
 
 with tab1:
+    # Download Time Series
     fig1 = px.line(filtered, x='Timestamp', y='Download', color='Tool',
                    title='Download Evolution (bps)')
     st.plotly_chart(fig1, use_container_width=True)
     
+    # Upload Time Series
     fig2 = px.line(filtered, x='Timestamp', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
     st.plotly_chart(fig2, use_container_width=True)
@@ -632,17 +636,19 @@ with tab2:
 with tab3:
     fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
                       hover_data=['Timestamp', 'Server Name'],
-                      title='Ping vs Download')
+                      title='Ping vs Download (bps)')
     st.plotly_chart(fig5, use_container_width=True)
 
 with tab4:
+    # Throttling detection
     filtered['DayOfWeek'] = filtered['Timestamp'].dt.day_name()
     filtered['IsWeekend'] = filtered['DayOfWeek'].isin(['Saturday', 'Sunday'])
     aggr = filtered.groupby(['Tool', 'IsWeekend'])['Download'].mean().reset_index()
     aggr['Period'] = aggr['IsWeekend'].map({True: 'Weekend', False: 'Weekday'})
+    aggr['Download_Mbps'] = aggr['Download'] / 1e6  # Converter para Mbps para melhor visualização
     
-    fig6 = px.bar(aggr, x='Tool', y='Download', color='Period', barmode='group',
-                  title='Avg Download: Weekday vs Weekend (Throttling Detection)')
+    fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
+                  title='Avg Download (Mbps): Weekday vs Weekend (Throttling Detection)')
     st.plotly_chart(fig6, use_container_width=True)
 
 with tab5:
