@@ -237,7 +237,7 @@ with tab6:
     st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 8. EXPORT FOR PDF REPORT (with All Tools option)
+# 8. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
@@ -262,9 +262,9 @@ with st.sidebar.form("pdf_report_form"):
     st.markdown("### Select Data Period")
     export_days = st.slider("Last N days", 1, 30, 7)
     
-    # Tool selection: include "All Tools" option
+    # Tool selection: default "All Tools" (last option)
     tool_options = list(df['Tool'].unique()) + ["All Tools"]
-    export_tool = st.selectbox("Tool to export", tool_options, index=0)
+    export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1)  # All Tools is last
     
     uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
     
@@ -298,6 +298,14 @@ with st.sidebar.form("pdf_report_form"):
                     tmp_pdf.write(uploaded_file.read())
                     bill_path = tmp_pdf.name
             
+            # Build dynamic filename: YYYYMMDD_ISP_ClientName_Start-End.pdf
+            start_str = export_df['Timestamp'].min().strftime('%Y%m%d')
+            end_str = export_df['Timestamp'].max().strftime('%Y%m%d')
+            safe_client = client_name.replace(' ', '_')
+            safe_isp = isp_name.replace(' ', '_')
+            filename = f"{datetime.now().strftime('%Y%m%d')}_{safe_isp}_{safe_client}_{start_str}-{end_str}.pdf"
+            output_path = f"/app/data/logs/{filename}"
+            
             cmd = [
                 'python', '-u', '/app/scripts/generate_pdf_report.py',
                 '--csv', csv_path,
@@ -306,7 +314,7 @@ with st.sidebar.form("pdf_report_form"):
                 '--plan', plan_name,
                 '--attorney', attorney_name,
                 '--address', address,
-                '--output', '/app/data/logs/report.pdf'
+                '--output', output_path
             ]
             if bill_path:
                 cmd.extend(['--bill', bill_path])
@@ -314,10 +322,10 @@ with st.sidebar.form("pdf_report_form"):
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode == 0:
-                    with open('/app/data/logs/report.pdf', 'rb') as f:
+                    with open(output_path, 'rb') as f:
                         pdf_bytes = f.read()
                     b64 = base64.b64encode(pdf_bytes).decode()
-                    href = f'<a href="data:application/pdf;base64,{b64}" download="report.pdf">Download PDF Report</a>'
+                    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">Download PDF Report</a>'
                     st.sidebar.markdown(href, unsafe_allow_html=True)
                     st.sidebar.success("PDF generated successfully!")
                 else:

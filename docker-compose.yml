@@ -1,21 +1,21 @@
 services:
   collector:
-    user: "1000:1000"  # opcional
     build:
       context: .
       dockerfile: Dockerfile.collector
     container_name: telecom_collector
     volumes:
-      - ./data:/app/data   # <--- mantido
+      - ./data:/app/data
     environment:
       - INTERVAL=300
-      - LOG_DIR=/app/data/logs   # <--- CORRIGIDO
+      - LOG_DIR=/app/data/logs
       - IPERF_SERVERS=iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz
     restart: unless-stopped
     networks:
       - telecom_net
 
   dashboard:
+    user: "1000:1000"   # <--- ADD THIS LINE
     build:
       context: .
       dockerfile: Dockerfile.dashboard
@@ -25,7 +25,7 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - LOG_DIR=/app/data/logs   # <--- CORRIGIDO
+      - LOG_DIR=/app/data/logs
     restart: unless-stopped
     networks:
       - telecom_net
