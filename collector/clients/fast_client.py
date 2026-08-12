@@ -16,7 +16,7 @@ def run():
             'server_lon': 0,
             'distance': 0,
             'ping': 0,
-            'download_bps': data.get('downloadSpeed', 0) * 1e6,
+            'download_bps': data.get('downloadSpeed', 0) * 1e6,  # fast retorna em Mbps
             'upload_bps': data.get('uploadSpeed', 0) * 1e6
         }
     except Exception as e:

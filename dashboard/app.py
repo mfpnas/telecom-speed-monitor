@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import base64
 import streamlit.components.v1 as components
-import pytz  # instale: pip install pytz
+import pytz
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
@@ -26,7 +26,15 @@ def load_data():
         tool = os.path.basename(f).replace('_speed_logs.csv', '')
         df = pd.read_csv(f)
         df['Tool'] = tool
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        if 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        else:
+            df['Timestamp'] = pd.to_datetime(df['timestamp'])
+        # Garantir colunas de lat/lon
+        if 'Server Lat' not in df.columns:
+            df['Server Lat'] = 0.0
+        if 'Server Lon' not in df.columns:
+            df['Server Lon'] = 0.0
         dfs.append(df)
     if not dfs:
         return pd.DataFrame()
@@ -46,10 +54,11 @@ timezone_str = st.sidebar.selectbox(
     ["UTC", "America/Sao_Paulo", "America/New_York", "Europe/London", "Asia/Tokyo"],
     index=0
 )
-user_tz = pytz.timezone(timezone_str)
-
-# Converter timestamps para o timezone selecionado
-df['Timestamp_local'] = df['Timestamp'].dt.tz_convert(user_tz)
+try:
+    user_tz = pytz.timezone(timezone_str)
+    df['Timestamp_local'] = df['Timestamp'].dt.tz_convert(user_tz)
+except Exception:
+    df['Timestamp_local'] = df['Timestamp']
 
 # ------------------------------------------------------------
 # 3. FILTERS
@@ -117,21 +126,14 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 with tab1:
-    # Ajustar eixo X para mostrar pontos a cada 5 minutos (usando range breaks ou dt.hour)
     fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
                    title='Download Evolution (bps)')
-    fig1.update_xaxes(
-        tickformat="%H:%M\n%m/%d",
-        dtick=300000  # 5 minutos em milissegundos (300000 ms)
-    )
+    fig1.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
     st.plotly_chart(fig1, use_container_width=True)
     
     fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
-    fig2.update_xaxes(
-        tickformat="%H:%M\n%m/%d",
-        dtick=300000
-    )
+    fig2.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
     st.plotly_chart(fig2, use_container_width=True)
 
 with tab2:
@@ -161,9 +163,7 @@ with tab4:
     st.plotly_chart(fig6, use_container_width=True)
 
 with tab5:
-    # Mapa de servidores
     st.subheader("🌍 Server Locations")
-    # Filtrar servidores com lat/lon válidos (diferente de 0)
     server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
         subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
     )

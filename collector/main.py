@@ -6,7 +6,7 @@ from collector.clients import speedtest_client, librespeed_client, fast_client, 
 from datetime import datetime
 
 def run_all_tests():
-    print(f"\n[{datetime.now()}] Iniciando rodada de testes...")
+    print(f"\n[{datetime.now()}] Starting test round...")
     
     clients = [
         ('speedtest-cli', speedtest_client.run),
@@ -21,15 +21,13 @@ def run_all_tests():
             if result:
                 write_result(name, result, LOG_DIR)
             else:
-                print(f"[{name}] Falha ao obter resultado.")
+                print(f"[{name}] Failed to get result.")
         except Exception as e:
-            print(f"[{name}] Erro crítico: {e}")
+            print(f"[{name}] Critical error: {e}")
 
 if __name__ == '__main__':
-    print(f"Coletor iniciado. Intervalo: {INTERVAL}s. Logs em: {LOG_DIR}")
-    # Executa imediatamente
+    print(f"Collector started. Interval: {INTERVAL}s. Logs: {LOG_DIR}")
     run_all_tests()
-    # Agenda execuções periódicas
     schedule.every(INTERVAL).seconds.do(run_all_tests)
     
     while True:

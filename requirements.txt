@@ -7,3 +7,4 @@ plotly
 requests
 python-dotenv
 schedule
+pytz

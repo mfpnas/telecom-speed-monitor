@@ -13,7 +13,6 @@ def write_result(tool_name, result, log_dir):
     os.makedirs(log_dir, exist_ok=True)
     filename = os.path.join(log_dir, f'{tool_name}_speed_logs.csv')
     
-    # Adicionar colunas de lat/lon do servidor
     fieldnames = ['Server ID', 'Sponsor', 'Server Name', 'Server Lat', 'Server Lon',
                   'Timestamp', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']
     

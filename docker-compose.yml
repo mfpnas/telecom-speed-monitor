@@ -1,6 +1,5 @@
 services:
   collector:
-    user: "1000:1000"
     build:
       context: .
       dockerfile: Dockerfile.collector
@@ -10,7 +9,7 @@ services:
     environment:
       - INTERVAL=300
       - LOG_DIR=/app/data/logs
-      - IPERF_SERVERS=iperf.he.net,iperf.ovh.net
+      - IPERF_SERVERS=speedtest.uztelecom.uz,iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net
     restart: unless-stopped
     networks:
       - telecom_net
