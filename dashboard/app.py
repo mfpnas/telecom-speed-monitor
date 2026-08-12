@@ -12,11 +12,11 @@ import pytz
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
-LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')
+LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')   # <--- CORRIGIDO
 st.title("📡 Telecom Speed Monitor Dashboard")
 
 # ------------------------------------------------------------
-# 1. LOAD DATA
+# 1. LOAD DATA (compatível com diferentes estruturas de CSV)
 # ------------------------------------------------------------
 @st.cache_data(ttl=300)
 def load_data():
@@ -24,18 +24,37 @@ def load_data():
     dfs = []
     for f in all_files:
         tool = os.path.basename(f).replace('_speed_logs.csv', '')
-        df = pd.read_csv(f)
+        try:
+            # Tenta ler normalmente
+            df = pd.read_csv(f)
+        except pd.errors.ParserError:
+            # Se houver erro de parsing, usa on_bad_lines='skip' para ignorar linhas problemáticas
+            df = pd.read_csv(f, on_bad_lines='skip')
+        
+        if df.empty:
+            continue
+        
         df['Tool'] = tool
+        
+        # Normalizar coluna de timestamp
         if 'Timestamp' in df.columns:
             df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        elif 'timestamp' in df.columns:
+            df.rename(columns={'timestamp': 'Timestamp'}, inplace=True)
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         else:
-            df['Timestamp'] = pd.to_datetime(df['timestamp'])
+            # Fallback: usa a data de modificação do arquivo (não ideal, mas evita quebra)
+            mtime = os.path.getmtime(f)
+            df['Timestamp'] = pd.to_datetime(mtime, unit='s', utc=True)
+        
         # Garantir colunas de lat/lon
         if 'Server Lat' not in df.columns:
             df['Server Lat'] = 0.0
         if 'Server Lon' not in df.columns:
             df['Server Lon'] = 0.0
+        
         dfs.append(df)
+    
     if not dfs:
         return pd.DataFrame()
     return pd.concat(dfs, ignore_index=True)
@@ -164,6 +183,7 @@ with tab4:
 
 with tab5:
     st.subheader("🌍 Server Locations")
+    # Filtrar apenas registros com lat/lon diferentes de 0
     server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
         subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
     )
@@ -237,7 +257,7 @@ with st.sidebar.form("pdf_report_form"):
                 '--plan', plan_name,
                 '--attorney', attorney_name,
                 '--address', address,
-                '--output', '/tmp/report.pdf'
+                '--output', '/app/data/logs/report.pdf'
             ]
             if bill_path:
                 cmd.extend(['--bill', bill_path])
@@ -245,7 +265,7 @@ with st.sidebar.form("pdf_report_form"):
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode == 0:
-                    with open('/tmp/report.pdf', 'rb') as f:
+                    with open('/app/data/logs/report.pdf', 'rb') as f:
                         pdf_bytes = f.read()
                     b64 = base64.b64encode(pdf_bytes).decode()
                     href = f'<a href="data:application/pdf;base64,{b64}" download="report.pdf">Download PDF Report</a>'
