@@ -135,7 +135,8 @@ with st.sidebar.form("pdf_report_form"):
     if submitted:
         with st.spinner("Generating report..."):
             # Filtrar dados
-            mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= datetime.now() - timedelta(days=export_days))
+            threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
+            mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)
             export_df = df[mask_export].copy()
             if export_df.empty:
                 st.error("No data for the selected period and tool.")
