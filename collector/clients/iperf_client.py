@@ -1,0 +1,39 @@
+import subprocess
+import json
+import random
+from collector.config import IPERF_SERVERS
+
+def run():
+    server = random.choice(IPERF_SERVERS)
+    try:
+        # Download (cliente recebe)
+        result_dl = subprocess.run(
+            ['iperf3', '-c', server, '-J', '-t', '10'],
+            capture_output=True, text=True, timeout=60
+        )
+        data_dl = json.loads(result_dl.stdout)
+        download_bps = data_dl.get('end', {}).get('sum_received', {}).get('bits_per_second', 0)
+        
+        # Upload (cliente envia, com -R)
+        result_ul = subprocess.run(
+            ['iperf3', '-c', server, '-J', '-t', '10', '-R'],
+            capture_output=True, text=True, timeout=60
+        )
+        data_ul = json.loads(result_ul.stdout)
+        upload_bps = data_ul.get('end', {}).get('sum_received', {}).get('bits_per_second', 0)
+        
+        # Extrai jitter e perda (se disponível)
+        ping = data_dl.get('end', {}).get('streams', [{}])[0].get('sender', {}).get('jitter_ms', 0)
+        
+        return {
+            'server_id': 'iperf3',
+            'sponsor': 'iPerf3',
+            'server_name': server,
+            'distance': 0,
+            'ping': ping,
+            'download_bps': download_bps,
+            'upload_bps': upload_bps
+        }
+    except Exception as e:
+        print(f"iperf3 erro ({server}): {e}")
+        return None

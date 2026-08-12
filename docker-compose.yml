@@ -1,0 +1,34 @@
+services:
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    container_name: telecom_collector
+    volumes:
+      - ./data:/app/data
+    environment:
+      - INTERVAL=300
+      - LOG_DIR=/app/data/logs
+      - IPERF_SERVERS=iperf.he.net,iperf.ovh.net
+    restart: unless-stopped
+    networks:
+      - telecom_net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: telecom_dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - LOG_DIR=/app/data/logs
+    restart: unless-stopped
+    networks:
+      - telecom_net
+
+networks:
+  telecom_net:
+    driver: bridge

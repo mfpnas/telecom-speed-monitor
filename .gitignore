@@ -1,0 +1,31 @@
+cat > .gitignore << 'EOF'
+# Data files (contains your test results)
+data/
+*.log
+*.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+EOF
