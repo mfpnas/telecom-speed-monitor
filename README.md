@@ -158,6 +158,33 @@ IPERF_SERVERS=iperf.he.net,iperf.ovh.net,ping.online.net
 ```dockerfile
 FROM python:3.11-slim
 
+import subprocess
+import json
+
+def run():
+    try:
+        # Usa curl para obter a velocidade do Fast.com
+        result = subprocess.run(
+            ['curl', '-s', 'https://fast.com/result', '--max-time', '30'],
+            capture_output=True, text=True, timeout=60
+        )
+        # A API do Fast.com retorna um JSON com a velocidade
+        data = json.loads(result.stdout)
+        download = data.get('downloadSpeed', 0)  # em bps
+        upload = data.get('uploadSpeed', 0)
+        return {
+            'server_id': 'fast_com',
+            'sponsor': 'Fast.com (Netflix)',
+            'server_name': 'Fast.com Global',
+            'distance': 0,
+            'ping': 0,
+            'download_bps': download,
+            'upload_bps': upload
+        }
+    except Exception as e:
+        print(f"fast-cli via curl erro: {e}")
+        return None
+
 # Cria um usuário não-root com UID 1000 (igual ao seu usuário no host)
 ARG USER_ID=1000
 ARG GROUP_ID=1000
@@ -387,9 +414,13 @@ import json
 def run():
     try:
         result = subprocess.run(
-            ['fast-cli', '--json'],
+            ['npx', '--yes', 'fast-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
+        # Verifica se a saída está vazia
+        if not result.stdout.strip():
+            print("fast-cli: Saída vazia, tentando novamente...")
+            return None
         data = json.loads(result.stdout)
         return {
             'server_id': 'fast_com',
@@ -400,8 +431,11 @@ def run():
             'download_bps': data.get('downloadSpeed', 0),
             'upload_bps': data.get('uploadSpeed', 0)
         }
+    except json.JSONDecodeError as e:
+        print(f"fast-cli JSON inválido: {e}")
+        return None
     except Exception as e:
-        print(f"fast-cli error: {e}")
+        print(f"fast-cli erro: {e}")
         return None
 ```
 
