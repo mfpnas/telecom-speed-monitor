@@ -162,6 +162,8 @@ def generate_report(csv_path, client_name, isp_name, plan_name, attorney_name, a
     weekday_median.index = dias_pt
 
     weekend_stats = clean.groupby('IsWeekend')['Download_Mbps'].median()
+    # Garantir que os dois índices existam (False = dia útil, True = fim de semana)
+    weekend_stats = weekend_stats.reindex([False, True])
     weekend_stats.index = ['Dias de semana', 'Fins de semana']
 
     contratado_dl = 500
