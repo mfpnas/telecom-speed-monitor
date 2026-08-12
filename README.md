@@ -158,26 +158,37 @@ IPERF_SERVERS=iperf.he.net,iperf.ovh.net,ping.online.net
 ```dockerfile
 FROM python:3.11-slim
 
-# Cria um usuário não-root com UID 1000 (igual ao seu usuário no host)
+# Cria um usuário não-root com UID 1000
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -g ${GROUP_ID} appuser && \
     useradd -m -u ${USER_ID} -g appuser appuser
 
+# Instala dependências do sistema, incluindo o Google Chrome
 RUN apt-get update && apt-get install -y \
     curl \
     npm \
     iperf3 \
+    wget \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Instala o Google Chrome Stable
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+# Define o caminho do Chrome para o Puppeteer
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Instala speedtest-cli via pip
 RUN pip install speedtest-cli
 
-# Instala fast-cli via npm e verifica
-RUN npm install -g fast-cli && npm list -g --depth=0
-
-# Garante que o caminho do npm global está no PATH
-ENV PATH="/usr/local/bin:${PATH}"
+# Instala fast-cli via npm
+RUN npm install -g fast-cli
 
 WORKDIR /app
 
@@ -187,10 +198,8 @@ RUN pip install -r requirements.txt
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-# Altera o proprietário dos arquivos para o novo usuário
 RUN chown -R appuser:appuser /app
 
-# Muda para o usuário não-root
 USER appuser
 
 CMD ["python", "-u", "-m", "collector.main"]
