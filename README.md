@@ -216,6 +216,7 @@ CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.add
 ```yaml
 services:
   collector:
+    user: "1000:1000"
     build:
       context: .
       dockerfile: Dockerfile.collector
