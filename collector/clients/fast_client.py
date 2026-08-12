@@ -3,12 +3,12 @@ import json
 
 def run():
     try:
+        # Usa npx para executar fast-cli
         result = subprocess.run(
-            ['fast-cli', '--json'],
+            ['npx', '--yes', 'fast-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
         data = json.loads(result.stdout)
-        # fast-cli não fornece ping nem servidor detalhado
         return {
             'server_id': 'fast_com',
             'sponsor': 'Fast.com (Netflix)',

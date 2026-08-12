@@ -15,8 +15,11 @@ RUN apt-get update && apt-get install -y \
 # Instala speedtest-cli via pip
 RUN pip install speedtest-cli
 
-# Instala fast-cli via npm
-RUN npm install -g fast-cli
+# Instala fast-cli via npm e verifica
+RUN npm install -g fast-cli && npm list -g --depth=0
+
+# Garante que o caminho do npm global está no PATH
+ENV PATH="/usr/local/bin:${PATH}"
 
 WORKDIR /app
 
