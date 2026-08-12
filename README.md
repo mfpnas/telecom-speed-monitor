@@ -525,6 +525,7 @@ from datetime import datetime, timedelta
 import subprocess
 import tempfile
 import base64
+import streamlit.components.v1 as components
 
 st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
 
@@ -571,7 +572,28 @@ if filtered.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# 3. QUICK METRICS
+# 3. AUTO REFRESH
+# ------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔄 Auto Refresh")
+
+refresh_interval = st.sidebar.selectbox(
+    "Refresh interval", 
+    ["Off", "1 minute", "5 minutes", "10 minutes"],
+    index=0
+)
+auto_refresh = refresh_interval != "Off"
+if auto_refresh:
+    interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
+    seconds = interval_map[refresh_interval]
+    meta = f'<meta http-equiv="refresh" content="{seconds}">'
+    components.html(meta, height=0)
+
+if st.sidebar.button("Refresh Now"):
+    st.rerun()
+
+# ------------------------------------------------------------
+# 4. QUICK METRICS
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
@@ -585,7 +607,7 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{filtered['Ping'].mean():.1f} ms")
 
 # ------------------------------------------------------------
-# 4. TABS
+# 5. TABS
 # ------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Time Series", "📊 Boxplot", "📉 Scatter", "📅 Throttling", "📋 Raw Data"])
 
@@ -627,12 +649,11 @@ with tab5:
     st.dataframe(filtered[['Timestamp', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 5. EXPORT FOR PDF REPORT
+# 6. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
 
-# Formulário para relatório
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
     client_name = st.text_input("Client Name", "John Doe")
@@ -645,14 +666,12 @@ with st.sidebar.form("pdf_report_form"):
     export_days = st.slider("Last N days", 1, 30, 7)
     export_tool = st.selectbox("Tool to export", df['Tool'].unique())
     
-    # Upload de fatura (opcional)
     uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
     
     submitted = st.form_submit_button("Generate PDF Report")
     
     if submitted:
         with st.spinner("Generating report..."):
-            # Filtrar dados
             threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
             mask_export = (df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)
             export_df = df[mask_export].copy()
@@ -660,20 +679,16 @@ with st.sidebar.form("pdf_report_form"):
                 st.error("No data for the selected period and tool.")
                 st.stop()
             
-            # Salvar CSV temporário
             with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
                 export_df.to_csv(tmp_csv.name, index=False)
                 csv_path = tmp_csv.name
             
-            # Salvar fatura se enviada
             bill_path = None
             if uploaded_file is not None:
                 with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
                     tmp_pdf.write(uploaded_file.read())
                     bill_path = tmp_pdf.name
             
-            # Gerar relatório PDF usando o script
-            # (assumindo que o script está em /app/scripts/generate_pdf_report.py)
             cmd = [
                 'python', '-u', '/app/scripts/generate_pdf_report.py',
                 '--csv', csv_path,
@@ -701,7 +716,6 @@ with st.sidebar.form("pdf_report_form"):
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
             finally:
-                # Limpar arquivos temporários
                 os.unlink(csv_path)
                 if bill_path:
                     os.unlink(bill_path)
