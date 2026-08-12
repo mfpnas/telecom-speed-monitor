@@ -141,6 +141,7 @@ streamlit
 plotly
 requests
 python-dotenv
+schedule
 ```
 
 #### `.env.example` (optional)
