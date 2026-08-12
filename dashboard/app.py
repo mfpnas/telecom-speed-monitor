@@ -150,7 +150,7 @@ st.sidebar.subheader("📄 Generate PDF Report")
 
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
-    client_name = st.text_input("Client Name", "John Doe")
+    client_name = st.text_input("Client Name", "Mauricio Faria Palma Nascimento")
     isp_name = st.text_input("ISP Name", "VIVO")
     plan_name = st.text_input("Plan Name", "VIVO TOTAL – PRO (500/250 Mbps)")
     attorney_name = st.text_input("Attorney Name (optional)", "")
