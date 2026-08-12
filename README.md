@@ -806,11 +806,10 @@ The authors assume **no liability** for any outcomes resulting from the use of t
 
 ---
 
-## Support
+## Contact
 
-- 📧 **Email:** support@telecom-monitor.io
-- 🐛 **Issues:** [GitHub Issues](https://github.com/yourusername/telecom-speed-monitor/issues)
-- 💬 **Discord:** [Join our Discord](https://discord.gg/telecom-monitor)
+- 📧 **Email:** mfpnas@gmail.com
+- 🐛 **Issues:** [GitHub Issues](https://github.com/mfpnas/telecom-speed-monitor/issues)
 
 ---
 
