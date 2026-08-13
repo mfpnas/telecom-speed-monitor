@@ -130,7 +130,7 @@ else:
     st.stop()
 
 # ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute) - using components.html
+# 5. AUTO REFRESH (default 1 minute) - using components
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
@@ -143,8 +143,8 @@ auto_refresh = refresh_interval != "Off"
 if auto_refresh:
     interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
     seconds = interval_map[refresh_interval]
-    # Inject meta refresh into the page head
-    st.sidebar.components.v1.html(
+    # CORRECT: use st.components.v1.html (not st.sidebar.components)
+    st.components.v1.html(
         f'<meta http-equiv="refresh" content="{seconds}">',
         height=0
     )
