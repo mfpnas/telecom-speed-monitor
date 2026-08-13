@@ -1,5 +1,3 @@
----
-
 # 📡 Telecom Speed Monitor
 
 **A complete, self‑hosted solution to monitor internet speed, detect throttling, and generate court‑ready PDF reports for lawsuits against ISPs (Brazilian Anatel standard).**
