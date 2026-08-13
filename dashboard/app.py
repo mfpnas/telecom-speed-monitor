@@ -52,6 +52,7 @@ DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
 DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
 DEFAULT_TZ = "America/Sao_Paulo"
 DEFAULT_REFRESH = "1 minute"
+DEFAULT_PERIOD = "Últimas 6 horas"
 
 # ------------------------------------------------------------
 # 2. LOAD DATA
@@ -107,7 +108,7 @@ except Exception:
     timezone_str = "UTC"
 
 # ------------------------------------------------------------
-# 4. FILTERS (with date range display and UTC filtering)
+# 4. FILTERS (date range + period selector)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filters")
@@ -120,12 +121,41 @@ st.sidebar.write(f"Data range: {min_date} to {max_date}")
 start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date, key="start_date")
 end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date, key="end_date")
 
-mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
-filtered = df[mask].copy()
+# --- Seletor de período relativo ---
+period_options = [
+    "Últimas 6 horas",
+    "Últimas 12 horas",
+    "Últimas 24 horas",
+    "Últimos 3 dias",
+    "Últimos 7 dias",
+    "Completo"
+]
+selected_period = st.sidebar.selectbox("Período", period_options, index=period_options.index(DEFAULT_PERIOD))
 
-if not filtered.empty:
+# Aplicar filtro de data base
+mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
+filtered_by_date = df[mask].copy()
+
+# Aplicar filtro de período relativo (se não for "Completo")
+if selected_period != "Completo":
+    # Extrair a quantidade de horas ou dias
+    if "horas" in selected_period:
+        hours = int(selected_period.split()[1])
+        cutoff = pd.Timestamp.now(tz='UTC') - pd.Timedelta(hours=hours)
+    elif "dias" in selected_period:
+        days = int(selected_period.split()[1])
+        cutoff = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=days)
+    else:
+        cutoff = None
+    if cutoff:
+        filtered_by_date = filtered_by_date[filtered_by_date['Timestamp'] >= cutoff]
+
+# Converter para timezone local para exibição
+if not filtered_by_date.empty:
+    filtered = filtered_by_date.copy()
     filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
 else:
+    filtered = filtered_by_date
     st.warning("No data with selected filters.")
     st.stop()
 
@@ -152,14 +182,14 @@ if st.sidebar.button("Refresh Now"):
     st.rerun()
 
 # ------------------------------------------------------------
-# 6. QUICK METRICS
+# 6. QUICK METRICS (calculated on filtered data)
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
 
-avg_dl_mbps = filtered['Download'].mean() / 1e6
-avg_ul_mbps = filtered['Upload'].mean() / 1e6
-avg_ping = filtered['Ping'].mean()
+avg_dl_mbps = filtered['Download'].mean() / 1e6 if not filtered.empty else 0
+avg_ul_mbps = filtered['Upload'].mean() / 1e6 if not filtered.empty else 0
+avg_ping = filtered['Ping'].mean() if not filtered.empty else 0
 
 with col_metrics[0]:
     st.metric("Total Tests", len(filtered))
@@ -171,7 +201,7 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
-# 7. TABS (using width='stretch')
+# 7. TABS (using filtered data)
 # ------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Time Series", "📊 Boxplot", "📉 Scatter",
@@ -196,10 +226,11 @@ with tab1:
             ])
         )
     )
-    # Mostrar últimos 20 registros inicialmente
-    if len(filtered) > 20:
-        last_20_time = filtered['Timestamp_local'].iloc[-20]
-        fig1.update_xaxes(range=[last_20_time, filtered['Timestamp_local'].max()])
+    # Mostrar últimas 6 horas por padrão (se não houver seleção)
+    if selected_period == "Completo" and len(filtered) > 1:
+        max_time = filtered['Timestamp_local'].max()
+        min_time = max_time - pd.Timedelta(hours=6)
+        fig1.update_xaxes(range=[min_time, max_time])
     st.plotly_chart(fig1, width='stretch')
     
     # Upload Evolution
@@ -219,9 +250,10 @@ with tab1:
             ])
         )
     )
-    if len(filtered) > 20:
-        last_20_time = filtered['Timestamp_local'].iloc[-20]
-        fig2.update_xaxes(range=[last_20_time, filtered['Timestamp_local'].max()])
+    if selected_period == "Completo" and len(filtered) > 1:
+        max_time = filtered['Timestamp_local'].max()
+        min_time = max_time - pd.Timedelta(hours=6)
+        fig2.update_xaxes(range=[min_time, max_time])
     st.plotly_chart(fig2, width='stretch')
 
 with tab2:
