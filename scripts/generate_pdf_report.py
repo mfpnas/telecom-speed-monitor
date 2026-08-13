@@ -265,12 +265,311 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(Paragraph(sec, style_body))
     story.append(PageBreak())
 
-    # Seções 1 a 7 (omitidas por brevidade – são as mesmas do script anterior)
-    # ... (inserir as seções 1 a 7 exatamente como no script anterior) ...
+    # Seção 1: Objetivo
+    story.append(Paragraph("1. OBJETIVO", style_heading1))
+    story.append(Paragraph(
+        f"O presente relatório tem por finalidade demonstrar, com base em medições objetivas e contínuas, "
+        f"que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no "
+        f"plano {plan_name}, além de evidenciar a prática de redução arbitrária de velocidade (throttling) "
+        f"nos fins de semana. Os dados aqui apresentados servirão como subsídio técnico para notificação "
+        f"extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.",
+        style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
 
-    # ------------------------------------------------------------
-    # 8. ANEXOS – GRÁFICOS (SEM LEGENDAS ACIMA)
-    # ------------------------------------------------------------
+    # Seção 2: Metodologia
+    story.append(Paragraph("2. METODOLOGIA", style_heading1))
+    story.append(Paragraph(
+        "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
+        "configuradas para executar medições a cada 5 minutos, ininterruptamente, durante o período analisado. "
+        "Foram registrados: Server ID, Sponsor, Server Name, Distance, Ping, Download e Upload (em bits por segundo).",
+        style_body
+    ))
+    story.append(Paragraph(
+        f"Critérios de exclusão: velocidade zero, ping > 10.000 ms. Após a limpeza, restaram {len(clean)} registros válidos.",
+        style_body
+    ))
+    story.append(Paragraph(
+        "As análises foram conduzidas com Python (pandas, numpy, scipy, matplotlib, seaborn).",
+        style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Seção 3: Análise estatística
+    story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
+
+    # 3.1
+    story.append(Paragraph("3.1. Desempenho por Dia da Semana (Dados Consolidados)", style_heading2))
+    dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+    dados_dia = [["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"]]
+    for idx, dia in enumerate(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']):
+        valor = combined_weekday_median[dia] if dia in combined_weekday_median.index else 0
+        pct = (valor / 500) * 100 if not pd.isna(valor) else 0
+        categoria = "Útil" if dia in ['Monday','Tuesday','Wednesday','Thursday','Friday'] else "Fim de semana"
+        dados_dia.append([dias_pt[idx], f"{valor:.1f}" if not pd.isna(valor) else "-", f"{pct:.1f}%", categoria])
+    table_dia = Table(dados_dia, colWidths=[3.5*cm, 4.5*cm, 3.5*cm, 4*cm])
+    table_dia.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 7),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 9),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_dia, Spacer(1, 0.3*cm)]))
+
+    # 3.2
+    story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
+    wk_median = combined_weekend_stats.get(False, 0) if False in combined_weekend_stats.index else 0
+    we_median = combined_weekend_stats.get(True, 0) if True in combined_weekend_stats.index else 0
+    upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
+    upload_weekend = clean[clean['IsWeekend']]['Upload_Mbps'].median() if not clean[clean['IsWeekend']].empty else 0
+
+    dados_comp = [
+        ["Período", "Mediana Download (Mbps)", "% da Contratada", "Mediana Upload (Mbps)", "% da Contratada (250)"],
+        ["Dias de semana (2ª a 6ª)",
+         f"{wk_median:.1f}",
+         f"{(wk_median/500)*100:.1f}%",
+         f"{upload_weekday:.1f}",
+         f"{(upload_weekday/250)*100:.1f}%"],
+        ["Fins de semana (Sáb+Dom)",
+         f"{we_median:.1f}",
+         f"{(we_median/500)*100:.1f}%",
+         f"{upload_weekend:.1f}",
+         f"{(upload_weekend/250)*100:.1f}%"],
+    ]
+    table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
+    table_comp.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 7),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
+
+    reducao = ((wk_median - we_median) / wk_median) * 100 if wk_median > 0 else 0
+    story.append(Paragraph(
+        f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia "
+        "gestão de tráfego sem aviso prévio.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+
+    # 3.3 Throttling
+    story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", style_heading2))
+    story.append(Paragraph(
+        "O padrão observado – velocidades mais baixas nos fins de semana – é compatível com a prática de "
+        "throttling, na qual a operadora reduz artificialmente a banda disponível em períodos de alta demanda, "
+        "sem aviso prévio ao consumidor. Essa conduta viola o princípio da neutralidade de rede (Marco Civil "
+        "da Internet, art. 9º), o direito à informação adequada (CDC, art. 6º, III) e a boa-fé objetiva "
+        "(CDC, art. 4º, III).", style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Seção 4: Velocidade contratada vs entregue
+    story.append(Paragraph("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", style_heading1))
+    story.append(Paragraph("4.1. Parâmetros Contratados", style_heading2))
+    story.append(Paragraph("• Download: 500 Mbps", style_body))
+    story.append(Paragraph("• Upload: 250 Mbps", style_body))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (Consolidadas)", style_heading2))
+    desc_data = [["Estatística", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]]
+    for stat in combined_desc.index:
+        desc_data.append([
+            stat.capitalize(),
+            f"{combined_desc.loc[stat, 'Download_Mbps']:.1f}",
+            f"{combined_desc.loc[stat, 'Upload_Mbps']:.1f}",
+            f"{combined_desc.loc[stat, 'Ping']:.1f}"
+        ])
+    table_desc = Table(desc_data, colWidths=[3*cm, 4*cm, 4*cm, 4*cm])
+    table_desc.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_desc, Spacer(1, 0.3*cm)]))
+
+    overall_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
+    overall_ul = combined_desc.loc['50%', 'Upload_Mbps'] if '50%' in combined_desc.index else 0
+    story.append(Paragraph(
+        f"A mediana ({overall_dl:.1f} Mbps de download e {overall_ul:.1f} Mbps de upload) é o indicador mais adequado para "
+        "avaliar a velocidade típica da conexão.", style_body
+    ))
+
+    story.append(Paragraph("4.3. Percentuais de Entrega por Período", style_heading2))
+    pct_data = [["Período", "Download Pct (%)", "Upload Pct (%)"]]
+    for periodo in ['Dias de semana', 'Fins de semana']:
+        is_weekend = True if periodo == 'Fins de semana' else False
+        if is_weekend in combined_pct_stats.index:
+            dl_pct = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
+            ul_pct = combined_pct_stats.loc[is_weekend, 'Upload_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Upload_Mbps']) else 0
+        else:
+            dl_pct = 0
+            ul_pct = 0
+        pct_data.append([periodo, f"{dl_pct:.1f}%", f"{ul_pct:.1f}%"])
+    table_pct = Table(pct_data, colWidths=[5*cm, 5*cm, 5*cm])
+    table_pct.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_pct, Spacer(1, 0.5*cm)]))
+
+    # Seção 5: Perda financeira
+    story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
+    story.append(Paragraph("5.1. Premissas", style_heading2))
+    story.append(Paragraph(f"• Plano: {plan_name}", style_body))
+    story.append(Paragraph(f"• Valor mensal estimado: {format_br_money(valor_mensal)}", style_body))
+    story.append(Paragraph(f"• Período analisado: {meses} meses ({meses//12} anos)", style_body))
+    story.append(Paragraph("• Inflação/reajustes não considerados (cálculo subestimado)", style_body))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(PageBreak())
+
+    story.append(Paragraph("5.2. Perda Mensal por Período", style_heading2))
+    perda_data = [["Período", "% Entregue", "% Não Entregue", "Valor Mensal (R$)", "Valor Efetivo (R$)", "Perda Mensal (R$)"]]
+    for periodo in ['Dias de semana', 'Fins de semana']:
+        is_weekend = True if periodo == 'Fins de semana' else False
+        if is_weekend in combined_pct_stats.index:
+            pct_ent = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
+        else:
+            pct_ent = 0
+        pct_nao = 100 - pct_ent
+        val_efet = valor_mensal * (pct_ent / 100)
+        perda = valor_mensal - val_efet
+        perda_data.append([
+            periodo,
+            f"{pct_ent:.1f}%",
+            f"{pct_nao:.1f}%",
+            format_br_money(valor_mensal),
+            format_br_money(val_efet),
+            format_br_money(perda)
+        ])
+    table_perda = Table(perda_data, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
+    table_perda.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_perda, Spacer(1, 0.3*cm)]))
+
+    story.append(Paragraph("5.3. Perda Média Mensal Ponderada", style_heading2))
+    story.append(Paragraph("Considerando 5 dias úteis e 2 dias de fim de semana por semana:", style_body))
+    story.append(Paragraph(f"• Dias úteis: (5/7) × {format_br_number(perda_weekday)} = {format_br_money(perda_weekday*(5/7))}", style_body))
+    story.append(Paragraph(f"• Fins de semana: (2/7) × {format_br_number(perda_weekend)} = {format_br_money(perda_weekend*(2/7))}", style_body))
+    story.append(Paragraph(f"• Perda média mensal total = {format_br_money(perda_media_mensal)}", style_body))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("5.4. Perda Acumulada em 4 Anos (48 meses)", style_heading2))
+    story.append(Paragraph(f"• Perda individual total: {format_br_money(perda_total_individual)}", style_body))
+    story.append(Paragraph(
+        f"Este valor é passível de restituição em dobro (CDC, art. 42, parágrafo único), "
+        f"totalizando {format_br_money(perda_total_individual*2)}.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("5.5. Estimativa para Ação Civil Pública (Região de Guaxupé/MG)", style_heading2))
+    story.append(Paragraph("• Número estimado de clientes Vivo Fibra na região: 4.500", style_body))
+    story.append(Paragraph(f"• Perda média por cliente: {format_br_money(perda_total_individual)}", style_body))
+    story.append(Paragraph(f"• Danos materiais coletivos: 4.500 × {format_br_number(perda_total_individual)} = {format_br_money(danos_materiais_coletivos)}", style_body))
+    story.append(Paragraph(f"• Danos morais coletivos (R$ 5.000/cliente): 4.500 × 5.000 = {format_br_money(danos_morais_coletivos)}", style_body))
+    story.append(Paragraph(f"• Total estimado da ação civil pública: {format_br_money(total_acao_coletiva)}", style_body))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Seção 6: Fundamentação legal
+    bloco_legal = []
+    bloco_legal.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
+    bloco_legal.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
+    bloco_legal.append(Paragraph("• Constituição Federal, art. 5º, XXXII – defesa do consumidor.", style_body))
+    bloco_legal.append(Paragraph("• Código de Defesa do Consumidor, art. 6º, III e VIII – informação e inversão do ônus da prova.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 14 – responsabilidade objetiva.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 39, V – vedação de vantagem excessiva.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 42, p.ú – devolução em dobro.", style_body))
+    bloco_legal.append(Paragraph("• Lei Geral de Telecomunicações, art. 3º – padrões de qualidade.", style_body))
+    bloco_legal.append(Paragraph("• Resolução Anatel nº 632/2014, art. 3º, §1º – velocidade média ≥ 80%.", style_body))
+    bloco_legal.append(Paragraph("• Marco Civil da Internet, art. 9º – neutralidade de rede.", style_body))
+    bloco_legal.append(Spacer(1, 0.3*cm))
+    bloco_legal.append(Paragraph("6.2. Jurisprudência Relevante", style_heading2))
+    bloco_legal.append(Paragraph(
+        "• STJ, REsp 1.660.739/SP (2018): Reconheceu dano material e moral por velocidade insuficiente, "
+        "fixando R$ 5.000,00 por cliente.", style_body
+    ))
+    bloco_legal.append(Paragraph(
+        "• TJSP, Apelação nº 1038170-12.2019.8.26.0114: Vivo condenada por velocidade inferior.", style_body
+    ))
+    bloco_legal.append(Paragraph(
+        "• MPMA vs. Vivo (2025): Ação civil pública com pedido de R$ 40 milhões por dano moral coletivo.", style_body
+    ))
+    story.append(KeepTogether(bloco_legal))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Seção 7: Recomendações
+    story.append(Paragraph("7. RECOMENDAÇÕES", style_heading1))
+    story.append(Paragraph(
+        "1. <b>Notificação extrajudicial à operadora</b> – Enviar notificação formal, com prazo de 15 (quinze) dias "
+        "para que a operadora regularize a velocidade de download para, no mínimo, 80% do contratado (400 Mbps) "
+        "e apresente comprovação da efetiva entrega do serviço, sob pena de adoção das medidas judiciais cabíveis. "
+        "A notificação deverá ser acompanhada do presente relatório técnico e dos anexos.", style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        f"2. <b>Ajuizamento de ação individual</b> – Caso não haja solução administrativa, propôr ação perante o "
+        f"Juizado Especial Cível ou Vara Cível competente, pleiteando: (a) restituição em dobro dos valores pagos "
+        f"a maior, conforme art. 42 do CDC (total estimado de {format_br_money(perda_total_individual*2)}); "
+        f"(b) indenização por danos morais no valor de R$ 10.000,00, com base nos precedentes do STJ e TJSP; "
+        f"(c) obrigação de fazer para que a operadora passe a faturar com transparência, discriminando a "
+        f"velocidade média mensal entregue e os incidentes de interrupção, com desconto automático proporcional.",
+        style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "3. <b>Encaminhamento ao Ministério Público Federal e à Anatel</b> – Remeter cópia integral do relatório, "
+        "com os gráficos e tabelas, ao MPF e à Superintendência de Fiscalização da Anatel, solicitando a "
+        "instauração de procedimento administrativo para apuração das infrações à Resolução Anatel nº 632/2014 "
+        "e ao Marco Civil da Internet, bem como o ajuizamento de ação civil pública em âmbito nacional para "
+        "proteger os direitos difusos de todos os consumidores.", style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "4. <b>Divulgação e mobilização social</b> – Compartilhar o caso com associações de defesa do consumidor "
+        "(IDEC, PROTESTE, PROCON) e com a imprensa local e nacional, visando conscientizar outros consumidores "
+        "sobre a prática de throttling e a necessidade de fiscalização mais rigorosa, além de estimular a adesão "
+        "a eventuais ações coletivas.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(PageBreak())
+
+    # Seção 8: Anexos (gráficos sem legendas)
     story.append(Paragraph("8. ANEXOS – GRÁFICOS", style_heading1))
     story.append(Spacer(1, 0.5*cm))
 
@@ -281,8 +580,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             fname = f"{base}{'' if prefix == '' else '_'+prefix}.png"
             img_path = os.path.join(graph_dir, fname)
             if os.path.exists(img_path):
-                # NÃO INSERE A LEGENDA DESCRITIVA
-                # story.append(Paragraph(desc, style_body))   <--- REMOVIDO
+                # Não insere legenda descritiva
                 img = Image(img_path, width=16*cm, height=5.2*cm)
                 table_img = Table([[img]], colWidths=[16*cm])
                 table_img.setStyle(TableStyle([
