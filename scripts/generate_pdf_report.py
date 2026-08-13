@@ -54,7 +54,6 @@ def generate_plots(df, output_dir, tool=None):
     else:
         title_suffix = ""
 
-    # Série Temporal com MA10
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(df['Timestamp'], df['Download_Mbps'], alpha=0.3, label='Download (bruto)')
     ax.plot(df['Timestamp'], df['Upload_Mbps'], alpha=0.3, label='Upload (bruto)')
@@ -71,7 +70,6 @@ def generate_plots(df, output_dir, tool=None):
     plt.savefig(os.path.join(output_dir, fname), dpi=200)
     plt.close()
 
-    # Distribuição de Download e Upload
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     sns.histplot(df['Download_Mbps'], bins=60, kde=True, ax=axes[0], color='green')
     axes[0].axvline(df['Download_Mbps'].median(), color='red', linestyle='--',
@@ -88,7 +86,6 @@ def generate_plots(df, output_dir, tool=None):
     plt.savefig(os.path.join(output_dir, fname), dpi=200)
     plt.close()
 
-    # Boxplot por Top 10 Provedores
     if len(df['Sponsor'].unique()) > 1:
         plt.figure(figsize=(12, 6))
         sns.boxplot(data=df, x='Sponsor', y='Download_Mbps', hue='Sponsor', palette='Set3', legend=False)
@@ -100,7 +97,6 @@ def generate_plots(df, output_dir, tool=None):
         plt.savefig(os.path.join(output_dir, fname), dpi=200)
         plt.close()
 
-    # Mapa de Provedores (Distância vs Download)
     if 'Distance' in df.columns and df['Distance'].notna().any():
         plt.figure(figsize=(12, 6))
         scatter = plt.scatter(df['Distance'], df['Download_Mbps'],
@@ -114,7 +110,6 @@ def generate_plots(df, output_dir, tool=None):
         plt.savefig(os.path.join(output_dir, fname), dpi=200)
         plt.close()
 
-    # Médias Horárias
     df['Hour'] = df['Timestamp'].dt.hour
     hourly = df.groupby('Hour')[['Download_Mbps', 'Upload_Mbps']].mean()
     fig, ax = plt.subplots(figsize=(12, 5))
@@ -127,7 +122,6 @@ def generate_plots(df, output_dir, tool=None):
     plt.savefig(os.path.join(output_dir, fname), dpi=200)
     plt.close()
 
-    # Médias por Dia da Semana
     dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
     weekday_avg = df.groupby('DayOfWeek')[['Download_Mbps', 'Upload_Mbps']].mean().reindex(
         ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -173,31 +167,45 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         clean['Tool'] = 'All'
     tools = clean['Tool'].unique()
 
-    # Estatísticas combinadas (usando todos os dados disponíveis)
+    # Estatísticas combinadas
     combined_desc = clean[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
 
-    # Mediana por dia da semana (apenas dias com dados)
+    # Análise de throttling: detectar redução de velocidade nos finais de semana
     weekday_median_full = clean.groupby('DayOfWeek')['Download_Mbps'].median()
-    # Reindex para ordem correta e filtrar apenas dias com dados
     weekdays_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
     dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
     combined_weekday_median = weekday_median_full.reindex(weekdays_order)
-    # Remover dias sem dados (NaN)
     combined_weekday_median = combined_weekday_median.dropna()
 
-    # Mediana por fim de semana vs dia útil (apenas categorias com dados)
     weekend_stats_full = clean.groupby('IsWeekend')['Download_Mbps'].median()
-    # Reindex para incluir False e True e filtrar
     weekend_stats = weekend_stats_full.reindex([False, True])
-    # Remover categorias sem dados
     weekend_stats = weekend_stats.dropna()
 
-    # Percentuais de entrega por período (apenas categorias com dados)
     combined_pct_stats_full = clean.groupby('IsWeekend')[['Download_Mbps', 'Upload_Mbps']].median() / [500,250] * 100
     combined_pct_stats = combined_pct_stats_full.reindex([False, True])
     combined_pct_stats = combined_pct_stats.dropna()
 
-    # Cálculo da perda financeira usando a mediana geral de download
+    # Detecção de throttling
+    has_weekend_data = len(weekend_stats) == 2
+    throttling_detected = False
+    throttling_percent = 0
+    if has_weekend_data:
+        wk_med = weekend_stats[False]
+        we_med = weekend_stats[True]
+        if wk_med > 0:
+            throttling_percent = ((wk_med - we_med) / wk_med) * 100
+            if throttling_percent > 5:  # mais de 5% de redução caracteriza throttling
+                throttling_detected = True
+
+    # Verificar se houve interrupção da conexão (download ou upload zero)
+    connection_interruptions = len(df[df['Download'] == 0]) + len(df[df['Upload'] == 0])
+    interruption_periods = []
+    if connection_interruptions > 0:
+        interrupted_timestamps = df[(df['Download'] == 0) | (df['Upload'] == 0)]['Timestamp']
+        for ts in interrupted_timestamps:
+            interruption_periods.append(ts.strftime('%d/%m/%Y %H:%M'))
+
+    # Cálculo da perda financeira
     overall_median_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
     pct_global = (overall_median_dl / 500) * 100 if overall_median_dl > 0 else 0
     perda_mensal = valor_mensal * (1 - pct_global/100)
@@ -257,7 +265,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_centered))
     story.append(PageBreak())
 
-    # Sumário (atualizado com tópico 9)
+    # Sumário
     story.append(Paragraph("SUMÁRIO", style_heading1))
     story.append(Spacer(1, 0.5*cm))
     for sec in [
@@ -265,7 +273,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "2. METODOLOGIA",
         "3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO",
         "   3.1. Desempenho por Dia da Semana",
-        "   3.2. Comparação Dias Úteis vs. Fins de Semana (quando disponível)",
+        "   3.2. Comparação Dias Úteis vs. Fins de Semana",
         "   3.3. Análise de Throttling",
         "4. VELOCIDADE CONTRATADA VERSUS ENTREGUE",
         "   4.1. Parâmetros Contratados",
@@ -273,7 +281,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "   4.3. Percentuais de Entrega por Período",
         "5. CÁLCULO DA PERDA FINANCEIRA",
         "   5.1. Premissas",
-        "   5.2. Perda Mensal por Período (dados disponíveis)",
+        "   5.2. Perda Mensal por Período",
         "   5.3. Perda Média Mensal",
         "   5.4. Perda Acumulada",
         "   5.5. Estimativa para Ação Civil Pública",
@@ -285,19 +293,39 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(Paragraph(sec, style_body))
     story.append(PageBreak())
 
-    # Seção 1: Objetivo
+    # Seção 1: OBJETIVO (conclusivo)
     story.append(Paragraph("1. OBJETIVO", style_heading1))
-    story.append(Paragraph(
-        f"O presente relatório tem por finalidade demonstrar, com base em medições objetivas e contínuas, "
-        f"que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no "
-        f"plano {plan_name}, além de evidenciar a prática de redução arbitrária de velocidade (throttling) "
-        f"nos fins de semana. Os dados aqui apresentados servirão como subsídio técnico para notificação "
-        f"extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.",
-        style_body
-    ))
+    objective_text = f"""
+    Com base nas medições objetivas e contínuas realizadas entre {clean['Timestamp'].min().strftime('%d/%m/%Y')} e {clean['Timestamp'].max().strftime('%d/%m/%Y')}, 
+    este relatório comprova que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no plano {plan_name}.
+    
+    A velocidade mediana de download obtida foi de {overall_median_dl:.1f} Mbps, representando apenas {pct_global:.1f}% dos 500 Mbps contratados, 
+    valor significativamente inferior ao mínimo de 80% exigido pela Resolução Anatel nº 632/2014.
+    
+    """
+    if throttling_detected:
+        objective_text += f"""
+    Foi identificada prática de throttling (redução arbitrária de velocidade) nos fins de semana, com redução média de {throttling_percent:.1f}% 
+    na velocidade de download em comparação aos dias úteis, caracterizando violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º).
+    """
+    else:
+        objective_text += """
+    Não foi possível confirmar a prática de throttling devido à indisponibilidade de dados em ambos os períodos (dias úteis e fins de semana) para comparação.
+    """
+    if connection_interruptions > 0:
+        objective_text += f"""
+    
+    Durante o período de coleta, foram identificados {connection_interruptions} momentos em que a conexão foi interrompida (download ou upload igual a zero), 
+    indicando falhas na prestação do serviço.
+    """
+    objective_text += """
+    
+    Os dados aqui apresentados servem como subsídio técnico para notificação extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.
+    """
+    story.append(Paragraph(objective_text, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 2: Metodologia
+    # Seção 2: METODOLOGIA
     story.append(Paragraph("2. METODOLOGIA", style_heading1))
     story.append(Paragraph(
         "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
@@ -315,7 +343,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     ))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 3: Análise estatística
+    # Seção 3: ANÁLISE ESTATÍSTICA
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
 
     # 3.1 – apenas dias com dados
@@ -325,7 +353,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         for dia, valor in combined_weekday_median.items():
             pct = (valor / 500) * 100
             categoria = "Útil" if dia in ['Monday','Tuesday','Wednesday','Thursday','Friday'] else "Fim de semana"
-            # Mapeia dia em português
             idx = weekdays_order.index(dia) if dia in weekdays_order else 0
             nome_dia = dias_pt[idx]
             dados_dia.append([nome_dia, f"{valor:.1f}", f"{pct:.1f}%", categoria])
@@ -346,10 +373,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", style_body))
 
-    # 3.2 – comparar semana vs fim de semana apenas se ambos tiverem dados
+    # 3.2 – comparar semana vs fim de semana
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
     if len(weekend_stats) == 2:
-        # ambos disponíveis
         wk_median = weekend_stats[False] if False in weekend_stats.index else 0
         we_median = weekend_stats[True] if True in weekend_stats.index else 0
         upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
@@ -391,18 +417,25 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", style_body))
     story.append(Spacer(1, 0.3*cm))
 
-    # 3.3 Throttling
+    # 3.3 – Análise de Throttling (detalhada)
     story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", style_heading2))
-    story.append(Paragraph(
-        "O padrão observado – velocidades mais baixas nos fins de semana – é compatível com a prática de "
-        "throttling, na qual a operadora reduz artificialmente a banda disponível em períodos de alta demanda, "
-        "sem aviso prévio ao consumidor. Essa conduta viola o princípio da neutralidade de rede (Marco Civil "
-        "da Internet, art. 9º), o direito à informação adequada (CDC, art. 6º, III) e a boa-fé objetiva "
-        "(CDC, art. 4º, III).", style_body
-    ))
+    if throttling_detected:
+        throttle_text = f"""
+        A análise dos dados coletados revelou a prática de throttling (redução arbitrária de velocidade) nos fins de semana. 
+        A velocidade mediana de download nos dias úteis foi de {wk_median:.1f} Mbps, enquanto nos fins de semana caiu para {we_median:.1f} Mbps, 
+        representando uma redução de {throttling_percent:.1f}%. 
+        Esta redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º), 
+        ao direito à informação adequada (CDC, art. 6º, III) e à boa-fé objetiva (CDC, art. 4º, III).
+        """
+    else:
+        throttle_text = """
+        Não foi possível confirmar a prática de throttling com os dados disponíveis, pois apenas um dos períodos (dias úteis ou fins de semana) 
+        possui registros suficientes para comparação. Recomenda-se a continuidade das medições para obter dados em ambos os períodos.
+        """
+    story.append(Paragraph(throttle_text, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 4: Velocidade contratada vs entregue
+    # Seção 4: VELOCIDADE CONTRATADA VS ENTREGUE
     story.append(Paragraph("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", style_heading1))
     story.append(Paragraph("4.1. Parâmetros Contratados", style_heading2))
     story.append(Paragraph("• Download: 500 Mbps", style_body))
@@ -463,7 +496,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     else:
         story.append(Paragraph("Não há dados para calcular os percentuais de entrega por período.", style_body))
 
-    # Seção 5: Perda financeira
+    # Seção 5: PERDA FINANCEIRA
     story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
     story.append(Paragraph("5.1. Premissas", style_heading2))
     story.append(Paragraph(f"• Plano: {plan_name}", style_body))
@@ -471,9 +504,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"• Período analisado: {meses} meses ({meses//12} anos)", style_body))
     story.append(Paragraph("• Inflação/reajustes não considerados (cálculo subestimado)", style_body))
     story.append(Spacer(1, 0.3*cm))
-    story.append(PageBreak())
 
-    # 5.2 – apenas períodos com dados
     story.append(Paragraph("5.2. Perda Mensal por Período (dados disponíveis)", style_heading2))
     if not combined_pct_stats.empty:
         perda_data = [["Período", "% Entregue", "% Não Entregue", "Valor Mensal (R$)", "Valor Efetivo (R$)", "Perda Mensal (R$)"]]
@@ -525,7 +556,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"• Total estimado da ação civil pública: {format_br_money(total_acao_coletiva)}", style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 6: Fundamentação legal
+    # Seção 6: FUNDAMENTAÇÃO LEGAL
     bloco_legal = []
     bloco_legal.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
     bloco_legal.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
@@ -552,7 +583,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(KeepTogether(bloco_legal))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 7: Recomendações
+    # Seção 7: RECOMENDAÇÕES
     story.append(Paragraph("7. RECOMENDAÇÕES", style_heading1))
     story.append(Paragraph(
         "1. <b>Notificação extrajudicial à operadora</b> – Enviar notificação formal, com prazo de 15 (quinze) dias "
@@ -588,9 +619,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
-    # Seção 8: Anexos (gráficos sem legendas)
+    # Seção 8: ANEXOS
     story.append(Paragraph("8. ANEXOS – GRÁFICOS", style_heading1))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.3*cm))
 
     def insert_images_for_prefix(prefix, title):
         story.append(Paragraph(title, style_heading2))
@@ -605,7 +636,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
                     ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                     ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ]))
-                story.append(KeepTogether([table_img, Spacer(1, 0.3*cm)]))
+                story.append(KeepTogether([table_img, Spacer(1, 0.2*cm)]))
         story.append(PageBreak())
 
     insert_images_for_prefix('', 'Gráficos Consolidados (Todas as Ferramentas)')
@@ -614,7 +645,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             if len(clean[clean['Tool'] == tool]) > 1:
                 insert_images_for_prefix(tool, f'Gráficos - {tool}')
 
-    # Seção 9: Resumo Executivo
+    # Seção 9: RESUMO EXECUTIVO
     story.append(Paragraph("9. RESUMO EXECUTIVO", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
@@ -625,13 +656,11 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     ul_med = overall_ul
     ping_med = combined_desc.loc['50%', 'Ping'] if '50%' in combined_desc.index else 0
     pct_global = (dl_med / 500) * 100 if dl_med > 0 else 0
-    # Verifica se há dados de fim de semana e dia útil para throttling
-    if len(weekend_stats) == 2:
-        wk_med = weekend_stats[False]
-        we_med = weekend_stats[True]
-        throttling_desc = f"Redução de {(wk_med - we_med)/wk_med*100:.1f}% nos fins de semana (throttling detectado)."
+
+    if throttling_detected:
+        throttling_desc = f"Redução de {throttling_percent:.1f}% nos fins de semana (throttling confirmado)."
     else:
-        throttling_desc = "Não foi possível detectar throttling por falta de dados em um dos períodos."
+        throttling_desc = "Não foi possível confirmar throttling por falta de dados em um dos períodos."
 
     resumo_texto = f"""
     Este relatório analisou {total_tests} testes de velocidade realizados entre {periodo}.
@@ -642,29 +671,23 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     Esta perda, quando considerada para uma possível ação coletiva, pode ultrapassar {format_br_money(total_acao_coletiva)}.
     """
     story.append(Paragraph(resumo_texto, style_body))
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.5*cm))
 
     # Localidade e data por extenso
     story.append(Paragraph(f"Localidade: {address}", style_body))
     data_extenso = datetime.now().strftime('%d de %B de %Y')
     story.append(Paragraph(f"Data da emissão: {data_extenso}", style_body))
-    story.append(Spacer(1, 2*cm))
+    story.append(Spacer(1, 1.5*cm))
 
     # Espaço para assinatura (10 linhas)
     story.append(Paragraph("_________________________________________", style_body))
-    story.append(Paragraph("Assinatura do Responsável Técnico", style_body))
+    story.append(Paragraph("Responsável Técnico", style_body))
     story.append(Spacer(1, 0.5*cm))
     story.append(Paragraph("_________________________________________", style_body))
-    story.append(Paragraph("Assinatura do Advogado (se houver)", style_body))
-    story.append(Spacer(1, 2*cm))
-    story.append(Paragraph(f"Nome do Responsável Técnico: {client_name}", style_body))
-    story.append(Spacer(1, 0.3*cm))
-    if attorney_name:
-        story.append(Paragraph(f"Nome do Advogado: {attorney_name}", style_body))
+    story.append(Paragraph("Advogado", style_body))
+    story.append(Spacer(1, 1*cm))
 
-    # Rodapé final (já incluso)
-
-    # Se houver fatura anexada
+    # Rodapé (sem repetir o nome)
     if bill_path and os.path.exists(bill_path):
         story.append(Spacer(1, 1*cm))
         story.append(Paragraph("Fatura anexada (PDF)", style_centered))
