@@ -1,347 +1,658 @@
-import streamlit as st
-import pandas as pd
+#!/usr/bin/env python3
+"""
+Generate a comprehensive court-ready PDF report from speed test data,
+including per‑tool analysis and the full legal sections.
+"""
+import argparse
 import os
-import glob
-import plotly.express as px
-from datetime import datetime, timedelta
-import subprocess
 import tempfile
-import base64
-import streamlit.components.v1 as components
-import pytz
-
-st.set_page_config(layout="wide", page_title="Telecom Speed Monitor")
-
-LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')
-st.title("📡 Telecom Speed Monitor Dashboard")
-
-# ------------------------------------------------------------
-# 1. BRAZILIAN TELECOM PLANS DATASET
-# ------------------------------------------------------------
-PLANS = {
-    "VIVO": [
-        {"name": "VIVO TOTAL – PRO (500/250 Mbps)", "download": 500, "upload": 250},
-        {"name": "VIVO TOTAL – MAX (300/150 Mbps)", "download": 300, "upload": 150},
-        {"name": "VIVO TOTAL – SMART (100/50 Mbps)", "download": 100, "upload": 50},
-        {"name": "VIVO FIBRA 700 Mbps", "download": 700, "upload": 350},
-        {"name": "VIVO FIBRA 200 Mbps", "download": 200, "upload": 100},
-    ],
-    "Claro": [
-        {"name": "Claro Fibra 500 Mbps", "download": 500, "upload": 250},
-        {"name": "Claro Fibra 300 Mbps", "download": 300, "upload": 150},
-        {"name": "Claro Fibra 120 Mbps", "download": 120, "upload": 60},
-        {"name": "Claro Fibra 50 Mbps", "download": 50, "upload": 25},
-    ],
-    "TIM": [
-        {"name": "TIM LIVE 500 Mbps", "download": 500, "upload": 250},
-        {"name": "TIM LIVE 300 Mbps", "download": 300, "upload": 150},
-        {"name": "TIM LIVE 100 Mbps", "download": 100, "upload": 50},
-    ],
-    "Oi": [
-        {"name": "Oi Fibra 500 Mbps", "download": 500, "upload": 250},
-        {"name": "Oi Fibra 300 Mbps", "download": 300, "upload": 150},
-        {"name": "Oi Fibra 100 Mbps", "download": 100, "upload": 50},
-    ],
-    "Algar": [
-        {"name": "Algar Fibra 500 Mbps", "download": 500, "upload": 250},
-        {"name": "Algar Fibra 300 Mbps", "download": 300, "upload": 150},
-    ],
-}
-
-# Default values
-DEFAULT_ISP = "VIVO"
-DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
-DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
-DEFAULT_TZ = "America/Sao_Paulo"
-DEFAULT_REFRESH = "1 minute"
-
-# ------------------------------------------------------------
-# 2. LOAD DATA
-# ------------------------------------------------------------
-@st.cache_data(ttl=300)
-def load_data():
-    all_files = glob.glob(os.path.join(LOG_DIR, '*_speed_logs.csv'))
-    dfs = []
-    for f in all_files:
-        tool = os.path.basename(f).replace('_speed_logs.csv', '')
-        try:
-            df = pd.read_csv(f)
-        except pd.errors.ParserError:
-            df = pd.read_csv(f, on_bad_lines='skip')
-        if df.empty:
-            continue
-        df['Tool'] = tool
-        if 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        elif 'timestamp' in df.columns:
-            df.rename(columns={'timestamp': 'Timestamp'}, inplace=True)
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        else:
-            mtime = os.path.getmtime(f)
-            df['Timestamp'] = pd.to_datetime(mtime, unit='s', utc=True)
-        if 'Server Lat' not in df.columns:
-            df['Server Lat'] = 0.0
-        if 'Server Lon' not in df.columns:
-            df['Server Lon'] = 0.0
-        dfs.append(df)
-    if not dfs:
-        return pd.DataFrame()
-    return pd.concat(dfs, ignore_index=True)
-
-df = load_data()
-if df.empty:
-    st.warning("No data found. Waiting for collector to start.")
-    st.stop()
-
-# ------------------------------------------------------------
-# 3. TIMEZONE SELECTOR (default America/Sao_Paulo)
-# ------------------------------------------------------------
-st.sidebar.header("🌐 Timezone Settings")
-timezone_str = st.sidebar.selectbox(
-    "Select Timezone",
-    ["UTC", "America/Sao_Paulo", "America/New_York", "Europe/London", "Asia/Tokyo"],
-    index=1  # America/Sao_Paulo
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image, PageBreak, KeepTogether
 )
-try:
-    user_tz = pytz.timezone(timezone_str)
-except Exception:
-    user_tz = pytz.UTC
-    timezone_str = "UTC"
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_palette("Set2")
 
 # ------------------------------------------------------------
-# 4. FILTERS (with date range display and UTC filtering)
+# FUNÇÕES DE FORMATAÇÃO BRASILEIRA
 # ------------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.header("🔍 Filters")
-tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
+def format_br_money(value):
+    """Formata um número para o padrão brasileiro: R$ 1.234.567,89"""
+    if pd.isna(value) or value is None:
+        return "R$ 0,00"
+    # Formata com duas casas decimais e separador de milhares (padrão US)
+    formatted = f"{value:,.2f}"
+    # Troca a vírgula por um placeholder, o ponto por vírgula, e o placeholder por ponto
+    parts = formatted.split('.')
+    integer_part = parts[0].replace(',', '.')
+    decimal_part = parts[1] if len(parts) > 1 else '00'
+    return f"R$ {integer_part},{decimal_part}"
 
-# Use UTC dates for filtering to avoid timezone shifts
-min_date = df['Timestamp'].min().date()
-max_date = df['Timestamp'].max().date()
-st.sidebar.write(f"Data range: {min_date} to {max_date}")
-
-start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date, key="start_date")
-end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date, key="end_date")
-
-# Filter using UTC dates
-mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
-filtered = df[mask].copy()
-
-# Convert to local timezone for display
-if not filtered.empty:
-    filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
-else:
-    st.warning("No data with selected filters.")
-    st.stop()
-
-# ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute) - using st.iframe
-# ------------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔄 Auto Refresh")
-refresh_interval = st.sidebar.selectbox(
-    "Refresh interval",
-    ["Off", "1 minute", "5 minutes", "10 minutes"],
-    index=1  # 1 minute
-)
-auto_refresh = refresh_interval != "Off"
-if auto_refresh:
-    interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
-    seconds = interval_map[refresh_interval]
-    # Use st.iframe instead of deprecated st.components.v1.html
-    st.sidebar.markdown(f'<meta http-equiv="refresh" content="{seconds}">', unsafe_allow_html=True)
-
-if st.sidebar.button("Refresh Now"):
-    st.rerun()
+def format_br_number(value):
+    """Formata um número para o padrão brasileiro (sem prefixo): 1.234.567,89"""
+    if pd.isna(value) or value is None:
+        return "0,00"
+    formatted = f"{value:,.2f}"
+    parts = formatted.split('.')
+    integer_part = parts[0].replace(',', '.')
+    decimal_part = parts[1] if len(parts) > 1 else '00'
+    return f"{integer_part},{decimal_part}"
 
 # ------------------------------------------------------------
-# 6. QUICK METRICS
+# FUNÇÕES DE GERAÇÃO DE GRÁFICOS
 # ------------------------------------------------------------
-st.subheader("📊 Summary")
-col_metrics = st.columns(4)
-
-avg_dl_mbps = filtered['Download'].mean() / 1e6
-avg_ul_mbps = filtered['Upload'].mean() / 1e6
-avg_ping = filtered['Ping'].mean()
-
-with col_metrics[0]:
-    st.metric("Total Tests", len(filtered))
-with col_metrics[1]:
-    st.metric("Avg Download", f"{avg_dl_mbps:.3f} Mbps")
-with col_metrics[2]:
-    st.metric("Avg Upload", f"{avg_ul_mbps:.3f} Mbps")
-with col_metrics[3]:
-    st.metric("Avg Ping", f"{avg_ping:.1f} ms")
-
-# ------------------------------------------------------------
-# 7. TABS (using width='stretch' instead of use_container_width)
-# ------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📈 Time Series", "📊 Boxplot", "📉 Scatter",
-    "📅 Throttling", "🗺️ Server Map", "📋 Raw Data"
-])
-
-with tab1:
-    fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
-                   title='Download Evolution (bps)')
-    fig1.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
-    st.plotly_chart(fig1, width='stretch')
-    
-    fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
-                   title='Upload Evolution (bps)')
-    fig2.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
-    st.plotly_chart(fig2, width='stretch')
-
-with tab2:
-    fig3 = px.box(filtered, x='Tool', y='Download', color='Tool',
-                  title='Download Distribution by Tool')
-    st.plotly_chart(fig3, width='stretch')
-    
-    fig4 = px.box(filtered, x='Tool', y='Ping', color='Tool',
-                  title='Ping Distribution by Tool')
-    st.plotly_chart(fig4, width='stretch')
-
-with tab3:
-    fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
-                      hover_data=['Timestamp_local', 'Server Name'],
-                      title='Ping vs Download (bps)')
-    st.plotly_chart(fig5, width='stretch')
-
-with tab4:
-    filtered['DayOfWeek'] = filtered['Timestamp_local'].dt.day_name()
-    filtered['IsWeekend'] = filtered['DayOfWeek'].isin(['Saturday', 'Sunday'])
-    aggr = filtered.groupby(['Tool', 'IsWeekend'])['Download'].mean().reset_index()
-    aggr['Period'] = aggr['IsWeekend'].map({True: 'Weekend', False: 'Weekday'})
-    aggr['Download_Mbps'] = aggr['Download'] / 1e6
-    
-    fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
-                  title='Avg Download (Mbps): Weekday vs Weekend (Throttling Detection)')
-    st.plotly_chart(fig6, width='stretch')
-
-with tab5:
-    st.subheader("🌍 Server Locations")
-    server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
-        subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
-    )
-    if not server_locations.empty:
-        # Note: scatter_mapbox is deprecated but still works; we keep it for compatibility.
-        fig_map = px.scatter_mapbox(
-            server_locations,
-            lat='Server Lat',
-            lon='Server Lon',
-            color='Tool',
-            hover_name='Server Name',
-            hover_data=['Sponsor', 'Distance'],
-            title='Servers Used for Tests',
-            mapbox_style='open-street-map',
-            zoom=4,
-            height=500
-        )
-        fig_map.update_layout(mapbox_style="open-street-map")
-        st.plotly_chart(fig_map, width='stretch')
+def generate_plots(df, output_dir, tool=None):
+    """Generate graphs for a given DataFrame, optionally filtered by tool."""
+    if tool:
+        title_suffix = f" - {tool}"
     else:
-        st.info("No server location data available. Only speedtest-cli and librespeed provide this.")
+        title_suffix = ""
 
-with tab6:
-    st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
+    # Série Temporal com MA10
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(df['Timestamp'], df['Download_Mbps'], alpha=0.3, label='Download (bruto)')
+    ax.plot(df['Timestamp'], df['Upload_Mbps'], alpha=0.3, label='Upload (bruto)')
+    ma_dl = df['Download_Mbps'].rolling(10, min_periods=1).mean()
+    ma_ul = df['Upload_Mbps'].rolling(10, min_periods=1).mean()
+    ax.plot(df['Timestamp'], ma_dl, 'r-', linewidth=2, label='Download (MA10)')
+    ax.plot(df['Timestamp'], ma_ul, 'b-', linewidth=2, label='Upload (MA10)')
+    ax.set_title(f'Evolução das Velocidades (MA10){title_suffix}')
+    ax.set_xlabel('Data/Hora')
+    ax.set_ylabel('Mbps')
+    ax.legend(loc='upper left')
+    plt.tight_layout()
+    fname = f"time_series{'_{}'.format(tool) if tool else ''}.png"
+    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    plt.close()
+
+    # Distribuição de Download e Upload
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    sns.histplot(df['Download_Mbps'], bins=60, kde=True, ax=axes[0], color='green')
+    axes[0].axvline(df['Download_Mbps'].median(), color='red', linestyle='--',
+                    label=f'Mediana: {df["Download_Mbps"].median():.1f} Mbps')
+    axes[0].set_title(f'Distribuição do Download{title_suffix}')
+    axes[0].legend()
+    sns.histplot(df['Upload_Mbps'], bins=60, kde=True, ax=axes[1], color='orange')
+    axes[1].axvline(df['Upload_Mbps'].median(), color='red', linestyle='--',
+                    label=f'Mediana: {df["Upload_Mbps"].median():.1f} Mbps')
+    axes[1].set_title(f'Distribuição do Upload{title_suffix}')
+    axes[1].legend()
+    plt.tight_layout()
+    fname = f"distribuicao{'_{}'.format(tool) if tool else ''}.png"
+    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    plt.close()
+
+    # Boxplot por Top 10 Provedores
+    if len(df['Sponsor'].unique()) > 1:
+        plt.figure(figsize=(12, 6))
+        sns.boxplot(data=df, x='Sponsor', y='Download_Mbps', hue='Sponsor', palette='Set3', legend=False)
+        plt.xticks(rotation=45, ha='right')
+        plt.title(f'Velocidade de Download por Provedor{title_suffix}')
+        plt.ylabel('Download (Mbps)')
+        plt.tight_layout()
+        fname = f"boxplot_sponsor{'_{}'.format(tool) if tool else ''}.png"
+        plt.savefig(os.path.join(output_dir, fname), dpi=200)
+        plt.close()
+
+    # Mapa de Provedores (Distância vs Download)
+    if 'Distance' in df.columns and df['Distance'].notna().any():
+        plt.figure(figsize=(12, 6))
+        scatter = plt.scatter(df['Distance'], df['Download_Mbps'],
+                              c=df['Ping'], cmap='plasma', alpha=0.5, s=10)
+        plt.colorbar(scatter, label='Ping (ms)')
+        plt.xlabel('Distância (km)')
+        plt.ylabel('Download (Mbps)')
+        plt.title(f'Relação Distância vs Download{title_suffix}')
+        plt.tight_layout()
+        fname = f"mapa_provedores_distancia{'_{}'.format(tool) if tool else ''}.png"
+        plt.savefig(os.path.join(output_dir, fname), dpi=200)
+        plt.close()
+
+    # Médias Horárias
+    df['Hour'] = df['Timestamp'].dt.hour
+    hourly = df.groupby('Hour')[['Download_Mbps', 'Upload_Mbps']].mean()
+    fig, ax = plt.subplots(figsize=(12, 5))
+    hourly.plot(kind='bar', ax=ax, color=['green', 'orange'])
+    ax.set_title(f'Velocidade Média por Hora do Dia{title_suffix}')
+    ax.set_xlabel('Hora')
+    ax.set_ylabel('Mbps')
+    plt.tight_layout()
+    fname = f"media_horaria{'_{}'.format(tool) if tool else ''}.png"
+    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    plt.close()
+
+    # Médias por Dia da Semana
+    dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+    weekday_avg = df.groupby('DayOfWeek')[['Download_Mbps', 'Upload_Mbps']].mean().reindex(
+        ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+    )
+    weekday_avg.index = dias_pt
+    fig, ax = plt.subplots(figsize=(10, 5))
+    weekday_avg.plot(kind='bar', ax=ax, color=['green', 'orange'])
+    ax.set_title(f'Velocidade Média por Dia da Semana{title_suffix}')
+    ax.set_xlabel('Dia')
+    ax.set_ylabel('Mbps')
+    plt.tight_layout()
+    fname = f"media_dia_semana{'_{}'.format(tool) if tool else ''}.png"
+    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    plt.close()
+
+    return output_dir
+
 
 # ------------------------------------------------------------
-# 8. EXPORT FOR PDF REPORT
+# FUNÇÃO PRINCIPAL
 # ------------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.subheader("📄 Generate PDF Report")
+def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
+                                  attorney_name="", address="", bill_path=None,
+                                  output_path="report.pdf", valor_mensal=172.00, meses=48):
+    # Preparar dados
+    df = df_orig.copy()
+    if 'Timestamp' in df.columns:
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    elif 'timestamp' in df.columns:
+        df['Timestamp'] = pd.to_datetime(df['timestamp'])
+    else:
+        df['Timestamp'] = pd.to_datetime('now')
 
-with st.sidebar.form("pdf_report_form"):
-    st.markdown("### Personal Information")
-    client_name = st.text_input("Client Name", DEFAULT_CLIENT, key="client_name")
-    
-    # ISP dropdown
-    isp_list = list(PLANS.keys())
-    isp_name = st.selectbox("ISP Name", isp_list, index=isp_list.index(DEFAULT_ISP), key="isp_name")
-    
-    # Plan dropdown based on selected ISP
-    plans = PLANS[isp_name]
-    plan_names = [p['name'] for p in plans]
-    default_plan_index = plan_names.index(DEFAULT_PLAN) if DEFAULT_PLAN in plan_names else 0
-    plan_name = st.selectbox("Plan Name", plan_names, index=default_plan_index, key="plan_name")
-    
-    attorney_name = st.text_input("Attorney Name (optional)", "", key="attorney_name")
-    address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil", key="address")
-    
-    st.markdown("### Select Data Period")
-    export_days = st.slider("Last N days", 1, 30, 7, key="export_days")
-    
-    # Tool selection: default "All Tools" (last option)
-    tool_options = list(df['Tool'].unique()) + ["All Tools"]
-    export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1, key="export_tool")  # All Tools is last
-    
-    uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'], key="bill_upload")
-    
-    submitted = st.form_submit_button("Generate PDF Report")
-    
-    if submitted:
-        with st.spinner("Generating report..."):
-            threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
-            
-            if export_tool == "All Tools":
-                export_df = df[df['Timestamp'] >= threshold].copy()
-            else:
-                export_df = df[(df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)].copy()
-            
-            if export_df.empty:
-                st.error("No data for the selected period and tool.")
-                st.stop()
-            
-            # Ensure required columns exist
-            for col in ['Server ID', 'Sponsor', 'Server Name', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']:
-                if col not in export_df.columns:
-                    export_df[col] = ''
-            
-            with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
-                export_df.to_csv(tmp_csv.name, index=False)
-                csv_path = tmp_csv.name
-            
-            bill_path = None
-            if uploaded_file is not None:
-                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
-                    tmp_pdf.write(uploaded_file.read())
-                    bill_path = tmp_pdf.name
-            
-            # Build dynamic filename: YYYYMMDD_ISP_ClientName_Start-End.pdf
-            start_str = export_df['Timestamp'].min().strftime('%Y%m%d')
-            end_str = export_df['Timestamp'].max().strftime('%Y%m%d')
-            safe_client = client_name.replace(' ', '_')
-            safe_isp = isp_name.replace(' ', '_')
-            filename = f"{datetime.now().strftime('%Y%m%d')}_{safe_isp}_{safe_client}_{start_str}-{end_str}.pdf"
-            output_path = f"/app/data/logs/{filename}"
-            
-            cmd = [
-                'python', '-u', '/app/scripts/generate_pdf_report.py',
-                '--csv', csv_path,
-                '--client', client_name,
-                '--isp', isp_name,
-                '--plan', plan_name,
-                '--attorney', attorney_name,
-                '--address', address,
-                '--output', output_path
-            ]
-            if bill_path:
-                cmd.extend(['--bill', bill_path])
-            
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                if result.returncode == 0:
-                    with open(output_path, 'rb') as f:
-                        pdf_bytes = f.read()
-                    b64 = base64.b64encode(pdf_bytes).decode()
-                    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">Download PDF Report</a>'
-                    st.sidebar.markdown(href, unsafe_allow_html=True)
-                    st.sidebar.success("PDF generated successfully!")
-                else:
-                    st.sidebar.error(f"PDF generation failed: {result.stderr}")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-            finally:
-                os.unlink(csv_path)
-                if bill_path:
-                    os.unlink(bill_path)
+    df['Download_Mbps'] = df['Download'] / 1e6
+    df['Upload_Mbps'] = df['Upload'] / 1e6
+    df['DayOfWeek'] = df['Timestamp'].dt.day_name()
+    df['IsWeekend'] = df['DayOfWeek'].isin(['Saturday', 'Sunday'])
+
+    clean = df[(df['Download'] > 0) & (df['Upload'] > 0) & (df['Ping'] < 10000)].copy()
+    if clean.empty:
+        raise ValueError("No valid data after cleaning")
+
+    if 'Tool' not in clean.columns:
+        clean['Tool'] = 'All'
+    tools = clean['Tool'].unique()
+
+    # Estatísticas combinadas
+    combined_desc = clean[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
+    combined_weekday_median = clean.groupby('DayOfWeek')['Download_Mbps'].median().reindex(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'])
+    combined_weekend_stats = clean.groupby('IsWeekend')['Download_Mbps'].median().reindex([False, True])
+    combined_pct_stats = clean.groupby('IsWeekend')[['Download_Mbps', 'Upload_Mbps']].median() / [500,250] * 100
+
+    # Cálculos financeiros
+    pct_weekday = combined_pct_stats.loc[False, 'Download_Mbps'] if False in combined_pct_stats.index else 0
+    pct_weekend = combined_pct_stats.loc[True, 'Download_Mbps'] if True in combined_pct_stats.index else 0
+    if pd.isna(pct_weekday): pct_weekday = 0
+    if pd.isna(pct_weekend): pct_weekend = 0
+
+    perda_weekday = valor_mensal * (1 - pct_weekday/100)
+    perda_weekend = valor_mensal * (1 - pct_weekend/100)
+    perda_media_mensal = (5/7) * perda_weekday + (2/7) * perda_weekend
+    perda_total_individual = perda_media_mensal * meses
+    danos_materiais_coletivos = perda_total_individual * 4500
+    danos_morais_coletivos = 5000 * 4500
+    total_acao_coletiva = danos_materiais_coletivos + danos_morais_coletivos
+
+    # Gerar gráficos
+    graph_dir = tempfile.mkdtemp()
+    generate_plots(clean, graph_dir, tool=None)
+    for tool in tools:
+        if len(clean[clean['Tool'] == tool]) > 1:
+            generate_plots(clean[clean['Tool'] == tool], graph_dir, tool=tool)
+
+    # ------------------------------------------------------------
+    # CONSTRUIR O PDF
+    # ------------------------------------------------------------
+    doc = SimpleDocTemplate(output_path, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2.5*cm, bottomMargin=2*cm)
+
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle('Title', parent=styles['Title'], fontSize=20,
+                                 alignment=TA_CENTER, spaceAfter=12, fontName='Helvetica-Bold')
+    style_subtitle = ParagraphStyle('Subtitle', parent=styles['Heading2'], fontSize=14,
+                                    alignment=TA_CENTER, spaceAfter=10, fontName='Helvetica')
+    style_heading1 = ParagraphStyle('Heading1', parent=styles['Heading1'], fontSize=16,
+                                    spaceAfter=8, fontName='Helvetica-Bold')
+    style_heading2 = ParagraphStyle('Heading2', parent=styles['Heading2'], fontSize=13,
+                                    spaceAfter=6, fontName='Helvetica-Bold')
+    style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10,
+                                alignment=TA_JUSTIFY, spaceAfter=6, fontName='Helvetica')
+    style_centered = ParagraphStyle('Centered', parent=styles['Normal'],
+                                    alignment=TA_CENTER, fontSize=10, fontName='Helvetica')
+    style_left = ParagraphStyle('Left', parent=styles['Normal'],
+                                alignment=TA_LEFT, fontSize=10, fontName='Helvetica')
+
+    story = []
+
+    # --- CAPA ---
+    story.append(Spacer(1, 4*cm))
+    story.append(Paragraph("RELATÓRIO TÉCNICO - JURÍDICO", style_title))
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("Análise de Qualidade de Serviço de Internet Banda Larga", style_subtitle))
+    story.append(Spacer(1, 2*cm))
+    story.append(Paragraph(f"Cliente: {client_name}", style_body))
+    story.append(Paragraph(f"Plano: {plan_name}", style_body))
+    story.append(Paragraph(f"Operadora: {isp_name}", style_body))
+    story.append(Paragraph(f"Período de Medição: {clean['Timestamp'].min().strftime('%d/%m/%Y')} a {clean['Timestamp'].max().strftime('%d/%m/%Y')}", style_body))
+    story.append(Paragraph(f"Base de Dados: {len(clean)} registros válidos", style_body))
+    story.append(Spacer(1, 2*cm))
+    if attorney_name:
+        story.append(Paragraph(f"Advogado: {attorney_name}", style_centered))
+    story.append(Paragraph(address, style_centered))
+    story.append(Spacer(1, 1*cm))
+    story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_centered))
+    story.append(PageBreak())
+
+    # --- SUMÁRIO ---
+    story.append(Paragraph("SUMÁRIO", style_heading1))
+    story.append(Spacer(1, 0.5*cm))
+    for sec in [
+        "1. OBJETIVO",
+        "2. METODOLOGIA",
+        "3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO",
+        "   3.1. Desempenho por Dia da Semana",
+        "   3.2. Comparação Dias Úteis vs. Fins de Semana",
+        "   3.3. Análise de Throttling",
+        "4. VELOCIDADE CONTRATADA VERSUS ENTREGUE",
+        "   4.1. Parâmetros Contratados",
+        "   4.2. Estatísticas Gerais",
+        "   4.3. Percentuais de Entrega por Período",
+        "5. CÁLCULO DA PERDA FINANCEIRA",
+        "   5.1. Premissas",
+        "   5.2. Perda Mensal por Período",
+        "   5.3. Perda Média Mensal Ponderada",
+        "   5.4. Perda Acumulada em 4 Anos",
+        "   5.5. Estimativa para Ação Civil Pública",
+        "6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA",
+        "7. RECOMENDAÇÕES",
+        "8. ANEXOS",
+    ]:
+        story.append(Paragraph(sec, style_body))
+    story.append(PageBreak())
+
+    # --- 1. OBJETIVO ---
+    story.append(Paragraph("1. OBJETIVO", style_heading1))
+    story.append(Paragraph(
+        f"O presente relatório tem por finalidade demonstrar, com base em medições objetivas e contínuas, "
+        f"que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no "
+        f"plano {plan_name}, além de evidenciar a prática de redução arbitrária de velocidade (throttling) "
+        f"nos fins de semana. Os dados aqui apresentados servirão como subsídio técnico para notificação "
+        f"extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.",
+        style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
+
+    # --- 2. METODOLOGIA ---
+    story.append(Paragraph("2. METODOLOGIA", style_heading1))
+    story.append(Paragraph(
+        "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
+        "configuradas para executar medições a cada 5 minutos, ininterruptamente, durante o período analisado. "
+        "Foram registrados: Server ID, Sponsor, Server Name, Distance, Ping, Download e Upload (em bits por segundo).",
+        style_body
+    ))
+    story.append(Paragraph(
+        f"Critérios de exclusão: velocidade zero, ping > 10.000 ms. Após a limpeza, restaram {len(clean)} registros válidos.",
+        style_body
+    ))
+    story.append(Paragraph(
+        "As análises foram conduzidas com Python (pandas, numpy, scipy, matplotlib, seaborn).",
+        style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
+
+    # --- 3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO ---
+    story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
+
+    # 3.1. Desempenho por Dia da Semana
+    story.append(Paragraph("3.1. Desempenho por Dia da Semana (Dados Consolidados)", style_heading2))
+    dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+    dados_dia = [["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"]]
+    for idx, dia in enumerate(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']):
+        valor = combined_weekday_median[dia] if dia in combined_weekday_median.index else 0
+        pct = (valor / 500) * 100 if not pd.isna(valor) else 0
+        categoria = "Útil" if dia in ['Monday','Tuesday','Wednesday','Thursday','Friday'] else "Fim de semana"
+        dados_dia.append([dias_pt[idx], f"{valor:.1f}" if not pd.isna(valor) else "-", f"{pct:.1f}%", categoria])
+    table_dia = Table(dados_dia, colWidths=[3.5*cm, 4.5*cm, 3.5*cm, 4*cm])
+    table_dia.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 7),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 9),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_dia, Spacer(1, 0.3*cm)]))
+
+    # 3.2. Comparação Dias Úteis vs. Fins de Semana
+    story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
+    wk_median = combined_weekend_stats.get(False, 0) if False in combined_weekend_stats.index else 0
+    we_median = combined_weekend_stats.get(True, 0) if True in combined_weekend_stats.index else 0
+    upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
+    upload_weekend = clean[clean['IsWeekend']]['Upload_Mbps'].median() if not clean[clean['IsWeekend']].empty else 0
+
+    dados_comp = [
+        ["Período", "Mediana Download (Mbps)", "% da Contratada", "Mediana Upload (Mbps)", "% da Contratada (250)"],
+        ["Dias de semana (2ª a 6ª)",
+         f"{wk_median:.1f}",
+         f"{(wk_median/500)*100:.1f}%",
+         f"{upload_weekday:.1f}",
+         f"{(upload_weekday/250)*100:.1f}%"],
+        ["Fins de semana (Sáb+Dom)",
+         f"{we_median:.1f}",
+         f"{(we_median/500)*100:.1f}%",
+         f"{upload_weekend:.1f}",
+         f"{(upload_weekend/250)*100:.1f}%"],
+    ]
+    table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
+    table_comp.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 7),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
+
+    reducao = ((wk_median - we_median) / wk_median) * 100 if wk_median > 0 else 0
+    story.append(Paragraph(
+        f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia "
+        "gestão de tráfego sem aviso prévio.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+
+    # 3.3. Throttling
+    story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", style_heading2))
+    story.append(Paragraph(
+        "O padrão observado – velocidades mais baixas nos fins de semana – é compatível com a prática de "
+        "throttling, na qual a operadora reduz artificialmente a banda disponível em períodos de alta demanda, "
+        "sem aviso prévio ao consumidor. Essa conduta viola o princípio da neutralidade de rede (Marco Civil "
+        "da Internet, art. 9º), o direito à informação adequada (CDC, art. 6º, III) e a boa-fé objetiva "
+        "(CDC, art. 4º, III).", style_body
+    ))
+    story.append(Spacer(1, 0.5*cm))
+
+    # --- 4. VELOCIDADE CONTRATADA VS ENTREGUE ---
+    story.append(Paragraph("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", style_heading1))
+    story.append(Paragraph("4.1. Parâmetros Contratados", style_heading2))
+    story.append(Paragraph("• Download: 500 Mbps", style_body))
+    story.append(Paragraph("• Upload: 250 Mbps", style_body))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (Consolidadas)", style_heading2))
+    desc_data = [["Estatística", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]]
+    for stat in combined_desc.index:
+        desc_data.append([
+            stat.capitalize(),
+            f"{combined_desc.loc[stat, 'Download_Mbps']:.1f}",
+            f"{combined_desc.loc[stat, 'Upload_Mbps']:.1f}",
+            f"{combined_desc.loc[stat, 'Ping']:.1f}"
+        ])
+    table_desc = Table(desc_data, colWidths=[3*cm, 4*cm, 4*cm, 4*cm])
+    table_desc.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_desc, Spacer(1, 0.3*cm)]))
+
+    overall_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
+    overall_ul = combined_desc.loc['50%', 'Upload_Mbps'] if '50%' in combined_desc.index else 0
+    story.append(Paragraph(
+        f"A mediana ({overall_dl:.1f} Mbps de download e {overall_ul:.1f} Mbps de upload) é o indicador mais adequado para "
+        "avaliar a velocidade típica da conexão.", style_body
+    ))
+
+    story.append(Paragraph("4.3. Percentuais de Entrega por Período", style_heading2))
+    pct_data = [["Período", "Download Pct (%)", "Upload Pct (%)"]]
+    for periodo in ['Dias de semana', 'Fins de semana']:
+        is_weekend = True if periodo == 'Fins de semana' else False
+        if is_weekend in combined_pct_stats.index:
+            dl_pct = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
+            ul_pct = combined_pct_stats.loc[is_weekend, 'Upload_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Upload_Mbps']) else 0
+        else:
+            dl_pct = 0
+            ul_pct = 0
+        pct_data.append([periodo, f"{dl_pct:.1f}%", f"{ul_pct:.1f}%"])
+    table_pct = Table(pct_data, colWidths=[5*cm, 5*cm, 5*cm])
+    table_pct.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_pct, Spacer(1, 0.5*cm)]))
+
+    # --- 5. CÁLCULO DA PERDA FINANCEIRA ---
+    story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
+    story.append(Paragraph("5.1. Premissas", style_heading2))
+    story.append(Paragraph(f"• Plano: {plan_name}", style_body))
+    story.append(Paragraph(f"• Valor mensal estimado: {format_br_money(valor_mensal)}", style_body))
+    story.append(Paragraph(f"• Período analisado: {meses} meses ({meses//12} anos)", style_body))
+    story.append(Paragraph("• Inflação/reajustes não considerados (cálculo subestimado)", style_body))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(PageBreak())
+
+    story.append(Paragraph("5.2. Perda Mensal por Período", style_heading2))
+    perda_data = [["Período", "% Entregue", "% Não Entregue", "Valor Mensal (R$)", "Valor Efetivo (R$)", "Perda Mensal (R$)"]]
+    for periodo in ['Dias de semana', 'Fins de semana']:
+        is_weekend = True if periodo == 'Fins de semana' else False
+        if is_weekend in combined_pct_stats.index:
+            pct_ent = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
+        else:
+            pct_ent = 0
+        pct_nao = 100 - pct_ent
+        val_efet = valor_mensal * (pct_ent / 100)
+        perda = valor_mensal - val_efet
+        perda_data.append([
+            periodo,
+            f"{pct_ent:.1f}%",
+            f"{pct_nao:.1f}%",
+            format_br_money(valor_mensal),
+            format_br_money(val_efet),
+            format_br_money(perda)
+        ])
+    table_perda = Table(perda_data, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
+    table_perda.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(KeepTogether([table_perda, Spacer(1, 0.3*cm)]))
+
+    story.append(Paragraph("5.3. Perda Média Mensal Ponderada", style_heading2))
+    story.append(Paragraph("Considerando 5 dias úteis e 2 dias de fim de semana por semana:", style_body))
+    story.append(Paragraph(f"• Dias úteis: (5/7) × {format_br_number(perda_weekday)} = {format_br_money(perda_weekday*(5/7))}", style_body))
+    story.append(Paragraph(f"• Fins de semana: (2/7) × {format_br_number(perda_weekend)} = {format_br_money(perda_weekend*(2/7))}", style_body))
+    story.append(Paragraph(f"• Perda média mensal total = {format_br_money(perda_media_mensal)}", style_body))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("5.4. Perda Acumulada em 4 Anos (48 meses)", style_heading2))
+    story.append(Paragraph(f"• Perda individual total: {format_br_money(perda_total_individual)}", style_body))
+    story.append(Paragraph(
+        f"Este valor é passível de restituição em dobro (CDC, art. 42, parágrafo único), "
+        f"totalizando {format_br_money(perda_total_individual*2)}.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("5.5. Estimativa para Ação Civil Pública (Região de Guaxupé/MG)", style_heading2))
+    story.append(Paragraph("• Número estimado de clientes Vivo Fibra na região: 4.500", style_body))
+    story.append(Paragraph(f"• Perda média por cliente: {format_br_money(perda_total_individual)}", style_body))
+    story.append(Paragraph(f"• Danos materiais coletivos: 4.500 × {format_br_number(perda_total_individual)} = {format_br_money(danos_materiais_coletivos)}", style_body))
+    story.append(Paragraph(f"• Danos morais coletivos (R$ 5.000/cliente): 4.500 × 5.000 = {format_br_money(danos_morais_coletivos)}", style_body))
+    story.append(Paragraph(f"• Total estimado da ação civil pública: {format_br_money(total_acao_coletiva)}", style_body))
+    story.append(Spacer(1, 0.5*cm))
+
+    # --- 6. FUNDAMENTAÇÃO LEGAL ---
+    bloco_legal = []
+    bloco_legal.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
+    bloco_legal.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
+    bloco_legal.append(Paragraph("• Constituição Federal, art. 5º, XXXII – defesa do consumidor.", style_body))
+    bloco_legal.append(Paragraph("• Código de Defesa do Consumidor, art. 6º, III e VIII – informação e inversão do ônus da prova.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 14 – responsabilidade objetiva.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 39, V – vedação de vantagem excessiva.", style_body))
+    bloco_legal.append(Paragraph("• CDC, art. 42, p.ú – devolução em dobro.", style_body))
+    bloco_legal.append(Paragraph("• Lei Geral de Telecomunicações, art. 3º – padrões de qualidade.", style_body))
+    bloco_legal.append(Paragraph("• Resolução Anatel nº 632/2014, art. 3º, §1º – velocidade média ≥ 80%.", style_body))
+    bloco_legal.append(Paragraph("• Marco Civil da Internet, art. 9º – neutralidade de rede.", style_body))
+    bloco_legal.append(Spacer(1, 0.3*cm))
+    bloco_legal.append(Paragraph("6.2. Jurisprudência Relevante", style_heading2))
+    bloco_legal.append(Paragraph(
+        "• STJ, REsp 1.660.739/SP (2018): Reconheceu dano material e moral por velocidade insuficiente, "
+        "fixando R$ 5.000,00 por cliente.", style_body
+    ))
+    bloco_legal.append(Paragraph(
+        "• TJSP, Apelação nº 1038170-12.2019.8.26.0114: Vivo condenada por velocidade inferior.", style_body
+    ))
+    bloco_legal.append(Paragraph(
+        "• MPMA vs. Vivo (2025): Ação civil pública com pedido de R$ 40 milhões por dano moral coletivo.", style_body
+    ))
+    story.append(KeepTogether(bloco_legal))
+    story.append(Spacer(1, 0.5*cm))
+
+    # --- 7. RECOMENDAÇÕES ---
+    story.append(Paragraph("7. RECOMENDAÇÕES", style_heading1))
+    story.append(Paragraph(
+        "1. <b>Notificação extrajudicial à operadora</b> – Enviar notificação formal, com prazo de 15 (quinze) dias "
+        "para que a operadora regularize a velocidade de download para, no mínimo, 80% do contratado (400 Mbps) "
+        "e apresente comprovação da efetiva entrega do serviço, sob pena de adoção das medidas judiciais cabíveis. "
+        "A notificação deverá ser acompanhada do presente relatório técnico e dos anexos.", style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        f"2. <b>Ajuizamento de ação individual</b> – Caso não haja solução administrativa, propôr ação perante o "
+        f"Juizado Especial Cível ou Vara Cível competente, pleiteando: (a) restituição em dobro dos valores pagos "
+        f"a maior, conforme art. 42 do CDC (total estimado de {format_br_money(perda_total_individual*2)}); "
+        f"(b) indenização por danos morais no valor de R$ 10.000,00, com base nos precedentes do STJ e TJSP; "
+        f"(c) obrigação de fazer para que a operadora passe a faturar com transparência, discriminando a "
+        f"velocidade média mensal entregue e os incidentes de interrupção, com desconto automático proporcional.",
+        style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "3. <b>Encaminhamento ao Ministério Público Federal e à Anatel</b> – Remeter cópia integral do relatório, "
+        "com os gráficos e tabelas, ao MPF e à Superintendência de Fiscalização da Anatel, solicitando a "
+        "instauração de procedimento administrativo para apuração das infrações à Resolução Anatel nº 632/2014 "
+        "e ao Marco Civil da Internet, bem como o ajuizamento de ação civil pública em âmbito nacional para "
+        "proteger os direitos difusos de todos os consumidores.", style_body
+    ))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "4. <b>Divulgação e mobilização social</b> – Compartilhar o caso com associações de defesa do consumidor "
+        "(IDEC, PROTESTE, PROCON) e com a imprensa local e nacional, visando conscientizar outros consumidores "
+        "sobre a prática de throttling e a necessidade de fiscalização mais rigorosa, além de estimular a adesão "
+        "a eventuais ações coletivas.", style_body
+    ))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(PageBreak())
+
+    # --- 8. ANEXOS ---
+    story.append(Paragraph("8. ANEXOS – GRÁFICOS", style_heading1))
+    story.append(Spacer(1, 0.5*cm))
+
+    def insert_images_for_prefix(prefix, title):
+        story.append(Paragraph(title, style_heading2))
+        bases = ['time_series', 'distribuicao', 'boxplot_sponsor', 'mapa_provedores_distancia', 'media_horaria', 'media_dia_semana']
+        for base in bases:
+            fname = f"{base}{'' if prefix == '' else '_'+prefix}.png"
+            img_path = os.path.join(graph_dir, fname)
+            if os.path.exists(img_path):
+                desc = base.replace('_', ' ').capitalize()
+                if prefix:
+                    desc += f" ({prefix})"
+                story.append(Paragraph(desc, style_body))
+                img = Image(img_path, width=16*cm, height=5.2*cm)
+                table_img = Table([[img]], colWidths=[16*cm])
+                table_img.setStyle(TableStyle([
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ]))
+                story.append(KeepTogether([table_img, Spacer(1, 0.3*cm)]))
+        story.append(PageBreak())
+
+    insert_images_for_prefix('', 'Gráficos Consolidados (Todas as Ferramentas)')
+    if len(tools) > 1:
+        for tool in tools:
+            if len(clean[clean['Tool'] == tool]) > 1:
+                insert_images_for_prefix(tool, f'Gráficos - {tool}')
+
+    story.append(Spacer(1, 3*cm))
+    story.append(Paragraph(f"Responsável Técnico: {client_name}", style_left))
+    story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_left))
+
+    if bill_path and os.path.exists(bill_path):
+        story.append(Spacer(1, 1*cm))
+        story.append(Paragraph("Fatura anexada (PDF)", style_centered))
+
+    doc.build(story)
+    print(f"PDF gerado com sucesso: {output_path}")
+    return output_path
+
+
+# ------------------------------------------------------------
+# PONTO DE ENTRADA PARA CLI
+# ------------------------------------------------------------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Gerar relatório PDF de velocidade de internet.")
+    parser.add_argument('--csv', required=True, help="Caminho do arquivo CSV com os dados")
+    parser.add_argument('--client', required=True, help="Nome do cliente")
+    parser.add_argument('--isp', required=True, help="Nome da operadora (ISP)")
+    parser.add_argument('--plan', required=True, help="Nome do plano contratado")
+    parser.add_argument('--attorney', default='', help="Nome do advogado (opcional)")
+    parser.add_argument('--address', default='', help="Endereço do cliente")
+    parser.add_argument('--bill', default=None, help="Caminho do PDF da fatura (opcional)")
+    parser.add_argument('--output', default='report.pdf', help="Caminho de saída do PDF")
+    args = parser.parse_args()
+
+    try:
+        df = pd.read_csv(args.csv)
+        generate_report_from_dataframe(
+            df_orig=df,
+            client_name=args.client,
+            isp_name=args.isp,
+            plan_name=args.plan,
+            attorney_name=args.attorney,
+            address=args.address,
+            bill_path=args.bill,
+            output_path=args.output
+        )
+    except Exception as e:
+        print(f"Erro na geração do relatório: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
