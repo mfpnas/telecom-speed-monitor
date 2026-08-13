@@ -108,7 +108,7 @@ except Exception:
     timezone_str = "UTC"
 
 # ------------------------------------------------------------
-# 4. FILTERS (date range + period selector)
+# 4. FILTERS (date range) - in sidebar
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filters")
@@ -121,7 +121,10 @@ st.sidebar.write(f"Data range: {min_date} to {max_date}")
 start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date, key="start_date")
 end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date, key="end_date")
 
-# --- Seletor de período relativo ---
+# ------------------------------------------------------------
+# 5. MAIN PERIOD SELECTOR (at the top of the dashboard)
+# ------------------------------------------------------------
+st.markdown("---")
 period_options = [
     "Últimas 6 horas",
     "Últimas 12 horas",
@@ -130,15 +133,22 @@ period_options = [
     "Últimos 7 dias",
     "Completo"
 ]
-selected_period = st.sidebar.selectbox("Período", period_options, index=period_options.index(DEFAULT_PERIOD))
+selected_period = st.selectbox(
+    "📅 Período de exibição",
+    period_options,
+    index=period_options.index(DEFAULT_PERIOD),
+    help="Selecione o intervalo de tempo para exibição dos dados"
+)
 
-# Aplicar filtro de data base
+# ------------------------------------------------------------
+# 6. APPLY FILTERS
+# ------------------------------------------------------------
+# Primeiro, filtro por ferramentas e datas (start/end)
 mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
 filtered_by_date = df[mask].copy()
 
-# Aplicar filtro de período relativo (se não for "Completo")
+# Depois, aplica o período relativo (se não for "Completo")
 if selected_period != "Completo":
-    # Extrair a quantidade de horas ou dias
     if "horas" in selected_period:
         hours = int(selected_period.split()[1])
         cutoff = pd.Timestamp.now(tz='UTC') - pd.Timedelta(hours=hours)
@@ -160,7 +170,7 @@ else:
     st.stop()
 
 # ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute)
+# 7. AUTO REFRESH (sidebar)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
@@ -182,7 +192,7 @@ if st.sidebar.button("Refresh Now"):
     st.rerun()
 
 # ------------------------------------------------------------
-# 6. QUICK METRICS (calculated on filtered data)
+# 8. QUICK METRICS (calculated on filtered data)
 # ------------------------------------------------------------
 st.subheader("📊 Summary")
 col_metrics = st.columns(4)
@@ -201,7 +211,7 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
-# 7. TABS (using filtered data)
+# 9. TABS (using filtered data)
 # ------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Time Series", "📊 Boxplot", "📉 Scatter",
@@ -215,22 +225,9 @@ with tab1:
     fig1.update_xaxes(
         tickformat="%H:%M\n%m/%d",
         dtick=300000,
-        rangeslider=dict(visible=True, thickness=0.05),
-        rangeselector=dict(
-            buttons=list([
-                dict(count=1, label="1h", step="hour", stepmode="backward"),
-                dict(count=6, label="6h", step="hour", stepmode="backward"),
-                dict(count=1, label="1d", step="day", stepmode="backward"),
-                dict(count=7, label="7d", step="day", stepmode="backward"),
-                dict(step="all", label="All")
-            ])
-        )
+        rangeslider=dict(visible=True, thickness=0.05)
+        # Removido o rangeselector para evitar duplicação
     )
-    # Mostrar últimas 6 horas por padrão (se não houver seleção)
-    if selected_period == "Completo" and len(filtered) > 1:
-        max_time = filtered['Timestamp_local'].max()
-        min_time = max_time - pd.Timedelta(hours=6)
-        fig1.update_xaxes(range=[min_time, max_time])
     st.plotly_chart(fig1, width='stretch')
     
     # Upload Evolution
@@ -239,21 +236,8 @@ with tab1:
     fig2.update_xaxes(
         tickformat="%H:%M\n%m/%d",
         dtick=300000,
-        rangeslider=dict(visible=True, thickness=0.05),
-        rangeselector=dict(
-            buttons=list([
-                dict(count=1, label="1h", step="hour", stepmode="backward"),
-                dict(count=6, label="6h", step="hour", stepmode="backward"),
-                dict(count=1, label="1d", step="day", stepmode="backward"),
-                dict(count=7, label="7d", step="day", stepmode="backward"),
-                dict(step="all", label="All")
-            ])
-        )
+        rangeslider=dict(visible=True, thickness=0.05)
     )
-    if selected_period == "Completo" and len(filtered) > 1:
-        max_time = filtered['Timestamp_local'].max()
-        min_time = max_time - pd.Timedelta(hours=6)
-        fig2.update_xaxes(range=[min_time, max_time])
     st.plotly_chart(fig2, width='stretch')
 
 with tab2:
@@ -309,7 +293,7 @@ with tab6:
     st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
 
 # ------------------------------------------------------------
-# 8. EXPORT FOR PDF REPORT
+# 10. EXPORT FOR PDF REPORT
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
