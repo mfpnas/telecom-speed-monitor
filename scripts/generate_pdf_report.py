@@ -173,30 +173,49 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         clean['Tool'] = 'All'
     tools = clean['Tool'].unique()
 
+    # Estatísticas combinadas (usando todos os dados disponíveis)
     combined_desc = clean[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
-    combined_weekday_median = clean.groupby('DayOfWeek')['Download_Mbps'].median().reindex(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'])
-    combined_weekend_stats = clean.groupby('IsWeekend')['Download_Mbps'].median().reindex([False, True])
-    combined_pct_stats = clean.groupby('IsWeekend')[['Download_Mbps', 'Upload_Mbps']].median() / [500,250] * 100
 
-    pct_weekday = combined_pct_stats.loc[False, 'Download_Mbps'] if False in combined_pct_stats.index else 0
-    pct_weekend = combined_pct_stats.loc[True, 'Download_Mbps'] if True in combined_pct_stats.index else 0
-    if pd.isna(pct_weekday): pct_weekday = 0
-    if pd.isna(pct_weekend): pct_weekend = 0
+    # Mediana por dia da semana (apenas dias com dados)
+    weekday_median_full = clean.groupby('DayOfWeek')['Download_Mbps'].median()
+    # Reindex para ordem correta e filtrar apenas dias com dados
+    weekdays_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+    dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+    combined_weekday_median = weekday_median_full.reindex(weekdays_order)
+    # Remover dias sem dados (NaN)
+    combined_weekday_median = combined_weekday_median.dropna()
 
-    perda_weekday = valor_mensal * (1 - pct_weekday/100)
-    perda_weekend = valor_mensal * (1 - pct_weekend/100)
-    perda_media_mensal = (5/7) * perda_weekday + (2/7) * perda_weekend
-    perda_total_individual = perda_media_mensal * meses
+    # Mediana por fim de semana vs dia útil (apenas categorias com dados)
+    weekend_stats_full = clean.groupby('IsWeekend')['Download_Mbps'].median()
+    # Reindex para incluir False e True e filtrar
+    weekend_stats = weekend_stats_full.reindex([False, True])
+    # Remover categorias sem dados
+    weekend_stats = weekend_stats.dropna()
+
+    # Percentuais de entrega por período (apenas categorias com dados)
+    combined_pct_stats_full = clean.groupby('IsWeekend')[['Download_Mbps', 'Upload_Mbps']].median() / [500,250] * 100
+    combined_pct_stats = combined_pct_stats_full.reindex([False, True])
+    combined_pct_stats = combined_pct_stats.dropna()
+
+    # Cálculo da perda financeira usando a mediana geral de download
+    overall_median_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
+    pct_global = (overall_median_dl / 500) * 100 if overall_median_dl > 0 else 0
+    perda_mensal = valor_mensal * (1 - pct_global/100)
+    perda_total_individual = perda_mensal * meses
     danos_materiais_coletivos = perda_total_individual * 4500
     danos_morais_coletivos = 5000 * 4500
     total_acao_coletiva = danos_materiais_coletivos + danos_morais_coletivos
 
+    # Gerar gráficos
     graph_dir = tempfile.mkdtemp()
     generate_plots(clean, graph_dir, tool=None)
     for tool in tools:
         if len(clean[clean['Tool'] == tool]) > 1:
             generate_plots(clean[clean['Tool'] == tool], graph_dir, tool=tool)
 
+    # ------------------------------------------------------------
+    # CONSTRUIR O PDF
+    # ------------------------------------------------------------
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             rightMargin=2*cm, leftMargin=2*cm,
                             topMargin=2.5*cm, bottomMargin=2*cm)
@@ -238,7 +257,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_centered))
     story.append(PageBreak())
 
-    # Sumário
+    # Sumário (atualizado com tópico 9)
     story.append(Paragraph("SUMÁRIO", style_heading1))
     story.append(Spacer(1, 0.5*cm))
     for sec in [
@@ -246,7 +265,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "2. METODOLOGIA",
         "3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO",
         "   3.1. Desempenho por Dia da Semana",
-        "   3.2. Comparação Dias Úteis vs. Fins de Semana",
+        "   3.2. Comparação Dias Úteis vs. Fins de Semana (quando disponível)",
         "   3.3. Análise de Throttling",
         "4. VELOCIDADE CONTRATADA VERSUS ENTREGUE",
         "   4.1. Parâmetros Contratados",
@@ -254,13 +273,14 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "   4.3. Percentuais de Entrega por Período",
         "5. CÁLCULO DA PERDA FINANCEIRA",
         "   5.1. Premissas",
-        "   5.2. Perda Mensal por Período",
-        "   5.3. Perda Média Mensal Ponderada",
-        "   5.4. Perda Acumulada em 4 Anos",
+        "   5.2. Perda Mensal por Período (dados disponíveis)",
+        "   5.3. Perda Média Mensal",
+        "   5.4. Perda Acumulada",
         "   5.5. Estimativa para Ação Civil Pública",
         "6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA",
         "7. RECOMENDAÇÕES",
         "8. ANEXOS",
+        "9. RESUMO EXECUTIVO",
     ]:
         story.append(Paragraph(sec, style_body))
     story.append(PageBreak())
@@ -298,70 +318,77 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     # Seção 3: Análise estatística
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
 
-    # 3.1
-    story.append(Paragraph("3.1. Desempenho por Dia da Semana (Dados Consolidados)", style_heading2))
-    dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-    dados_dia = [["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"]]
-    for idx, dia in enumerate(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']):
-        valor = combined_weekday_median[dia] if dia in combined_weekday_median.index else 0
-        pct = (valor / 500) * 100 if not pd.isna(valor) else 0
-        categoria = "Útil" if dia in ['Monday','Tuesday','Wednesday','Thursday','Friday'] else "Fim de semana"
-        dados_dia.append([dias_pt[idx], f"{valor:.1f}" if not pd.isna(valor) else "-", f"{pct:.1f}%", categoria])
-    table_dia = Table(dados_dia, colWidths=[3.5*cm, 4.5*cm, 3.5*cm, 4*cm])
-    table_dia.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 7),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
-        ('FONTSIZE', (0,1), (-1,-1), 9),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(KeepTogether([table_dia, Spacer(1, 0.3*cm)]))
+    # 3.1 – apenas dias com dados
+    story.append(Paragraph("3.1. Desempenho por Dia da Semana (dias com dados disponíveis)", style_heading2))
+    if not combined_weekday_median.empty:
+        dados_dia = [["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"]]
+        for dia, valor in combined_weekday_median.items():
+            pct = (valor / 500) * 100
+            categoria = "Útil" if dia in ['Monday','Tuesday','Wednesday','Thursday','Friday'] else "Fim de semana"
+            # Mapeia dia em português
+            idx = weekdays_order.index(dia) if dia in weekdays_order else 0
+            nome_dia = dias_pt[idx]
+            dados_dia.append([nome_dia, f"{valor:.1f}", f"{pct:.1f}%", categoria])
+        table_dia = Table(dados_dia, colWidths=[3.5*cm, 4.5*cm, 3.5*cm, 4*cm])
+        table_dia.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 7),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+            ('FONTSIZE', (0,1), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(KeepTogether([table_dia, Spacer(1, 0.3*cm)]))
+    else:
+        story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", style_body))
 
-    # 3.2
+    # 3.2 – comparar semana vs fim de semana apenas se ambos tiverem dados
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
-    wk_median = combined_weekend_stats.get(False, 0) if False in combined_weekend_stats.index else 0
-    we_median = combined_weekend_stats.get(True, 0) if True in combined_weekend_stats.index else 0
-    upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
-    upload_weekend = clean[clean['IsWeekend']]['Upload_Mbps'].median() if not clean[clean['IsWeekend']].empty else 0
+    if len(weekend_stats) == 2:
+        # ambos disponíveis
+        wk_median = weekend_stats[False] if False in weekend_stats.index else 0
+        we_median = weekend_stats[True] if True in weekend_stats.index else 0
+        upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
+        upload_weekend = clean[clean['IsWeekend']]['Upload_Mbps'].median() if not clean[clean['IsWeekend']].empty else 0
 
-    dados_comp = [
-        ["Período", "Mediana Download (Mbps)", "% da Contratada", "Mediana Upload (Mbps)", "% da Contratada (250)"],
-        ["Dias de semana (2ª a 6ª)",
-         f"{wk_median:.1f}",
-         f"{(wk_median/500)*100:.1f}%",
-         f"{upload_weekday:.1f}",
-         f"{(upload_weekday/250)*100:.1f}%"],
-        ["Fins de semana (Sáb+Dom)",
-         f"{we_median:.1f}",
-         f"{(we_median/500)*100:.1f}%",
-         f"{upload_weekend:.1f}",
-         f"{(upload_weekend/250)*100:.1f}%"],
-    ]
-    table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
-    table_comp.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 7),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
-        ('FONTSIZE', (0,1), (-1,-1), 8),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
-
-    reducao = ((wk_median - we_median) / wk_median) * 100 if wk_median > 0 else 0
-    story.append(Paragraph(
-        f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia "
-        "gestão de tráfego sem aviso prévio.", style_body
-    ))
+        dados_comp = [
+            ["Período", "Mediana Download (Mbps)", "% da Contratada", "Mediana Upload (Mbps)", "% da Contratada (250)"],
+            ["Dias de semana (2ª a 6ª)",
+             f"{wk_median:.1f}",
+             f"{(wk_median/500)*100:.1f}%",
+             f"{upload_weekday:.1f}",
+             f"{(upload_weekday/250)*100:.1f}%"],
+            ["Fins de semana (Sáb+Dom)",
+             f"{we_median:.1f}",
+             f"{(we_median/500)*100:.1f}%",
+             f"{upload_weekend:.1f}",
+             f"{(upload_weekend/250)*100:.1f}%"],
+        ]
+        table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
+        table_comp.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 7),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
+        reducao = ((wk_median - we_median) / wk_median) * 100 if wk_median > 0 else 0
+        story.append(Paragraph(
+            f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia "
+            "gestão de tráfego sem aviso prévio.", style_body
+        ))
+    else:
+        story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", style_body))
     story.append(Spacer(1, 0.3*cm))
 
     # 3.3 Throttling
@@ -382,7 +409,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph("• Upload: 250 Mbps", style_body))
     story.append(Spacer(1, 0.3*cm))
 
-    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (Consolidadas)", style_heading2))
+    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (dados consolidados)", style_heading2))
     desc_data = [["Estatística", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]]
     for stat in combined_desc.index:
         desc_data.append([
@@ -413,31 +440,28 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "avaliar a velocidade típica da conexão.", style_body
     ))
 
-    story.append(Paragraph("4.3. Percentuais de Entrega por Período", style_heading2))
-    pct_data = [["Período", "Download Pct (%)", "Upload Pct (%)"]]
-    for periodo in ['Dias de semana', 'Fins de semana']:
-        is_weekend = True if periodo == 'Fins de semana' else False
-        if is_weekend in combined_pct_stats.index:
-            dl_pct = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
-            ul_pct = combined_pct_stats.loc[is_weekend, 'Upload_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Upload_Mbps']) else 0
-        else:
-            dl_pct = 0
-            ul_pct = 0
-        pct_data.append([periodo, f"{dl_pct:.1f}%", f"{ul_pct:.1f}%"])
-    table_pct = Table(pct_data, colWidths=[5*cm, 5*cm, 5*cm])
-    table_pct.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 9),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
-        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
-        ('FONTSIZE', (0,1), (-1,-1), 8),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(KeepTogether([table_pct, Spacer(1, 0.5*cm)]))
+    story.append(Paragraph("4.3. Percentuais de Entrega por Período (dados disponíveis)", style_heading2))
+    if not combined_pct_stats.empty:
+        pct_data = [["Período", "Download Pct (%)", "Upload Pct (%)"]]
+        for idx, row in combined_pct_stats.iterrows():
+            periodo = "Dias de semana" if idx == False else "Fins de semana"
+            pct_data.append([periodo, f"{row['Download_Mbps']:.1f}%", f"{row['Upload_Mbps']:.1f}%"])
+        table_pct = Table(pct_data, colWidths=[5*cm, 5*cm, 5*cm])
+        table_pct.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 9),
+            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(KeepTogether([table_pct, Spacer(1, 0.5*cm)]))
+    else:
+        story.append(Paragraph("Não há dados para calcular os percentuais de entrega por período.", style_body))
 
     # Seção 5: Perda financeira
     story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
@@ -449,56 +473,51 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
-    story.append(Paragraph("5.2. Perda Mensal por Período", style_heading2))
-    perda_data = [["Período", "% Entregue", "% Não Entregue", "Valor Mensal (R$)", "Valor Efetivo (R$)", "Perda Mensal (R$)"]]
-    for periodo in ['Dias de semana', 'Fins de semana']:
-        is_weekend = True if periodo == 'Fins de semana' else False
-        if is_weekend in combined_pct_stats.index:
-            pct_ent = combined_pct_stats.loc[is_weekend, 'Download_Mbps'] if not pd.isna(combined_pct_stats.loc[is_weekend, 'Download_Mbps']) else 0
-        else:
-            pct_ent = 0
-        pct_nao = 100 - pct_ent
-        val_efet = valor_mensal * (pct_ent / 100)
-        perda = valor_mensal - val_efet
-        perda_data.append([
-            periodo,
-            f"{pct_ent:.1f}%",
-            f"{pct_nao:.1f}%",
-            format_br_money(valor_mensal),
-            format_br_money(val_efet),
-            format_br_money(perda)
-        ])
-    table_perda = Table(perda_data, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
-    table_perda.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 8),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
-        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
-        ('FONTSIZE', (0,1), (-1,-1), 8),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(KeepTogether([table_perda, Spacer(1, 0.3*cm)]))
+    # 5.2 – apenas períodos com dados
+    story.append(Paragraph("5.2. Perda Mensal por Período (dados disponíveis)", style_heading2))
+    if not combined_pct_stats.empty:
+        perda_data = [["Período", "% Entregue", "% Não Entregue", "Valor Mensal (R$)", "Valor Efetivo (R$)", "Perda Mensal (R$)"]]
+        for idx, row in combined_pct_stats.iterrows():
+            pct_ent = row['Download_Mbps']
+            pct_nao = 100 - pct_ent
+            val_efet = valor_mensal * (pct_ent / 100)
+            perda = valor_mensal - val_efet
+            periodo = "Dias de semana" if idx == False else "Fins de semana"
+            perda_data.append([
+                periodo,
+                f"{pct_ent:.1f}%",
+                f"{pct_nao:.1f}%",
+                format_br_money(valor_mensal),
+                format_br_money(val_efet),
+                format_br_money(perda)
+            ])
+        table_perda = Table(perda_data, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
+        table_perda.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,0), 8),
+            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(KeepTogether([table_perda, Spacer(1, 0.3*cm)]))
+    else:
+        story.append(Paragraph("Não há dados para calcular a perda por período.", style_body))
 
-    story.append(Paragraph("5.3. Perda Média Mensal Ponderada", style_heading2))
-    story.append(Paragraph("Considerando 5 dias úteis e 2 dias de fim de semana por semana:", style_body))
-    story.append(Paragraph(f"• Dias úteis: (5/7) × {format_br_number(perda_weekday)} = {format_br_money(perda_weekday*(5/7))}", style_body))
-    story.append(Paragraph(f"• Fins de semana: (2/7) × {format_br_number(perda_weekend)} = {format_br_money(perda_weekend*(2/7))}", style_body))
-    story.append(Paragraph(f"• Perda média mensal total = {format_br_money(perda_media_mensal)}", style_body))
-    story.append(Spacer(1, 0.3*cm))
-
-    story.append(Paragraph("5.4. Perda Acumulada em 4 Anos (48 meses)", style_heading2))
-    story.append(Paragraph(f"• Perda individual total: {format_br_money(perda_total_individual)}", style_body))
+    story.append(Paragraph("5.3. Perda Média Mensal", style_heading2))
+    story.append(Paragraph(f"• Perda média mensal (calculada com base na mediana geral de download): {format_br_money(perda_mensal)}", style_body))
+    story.append(Paragraph(f"• Perda total individual em {meses} meses: {format_br_money(perda_total_individual)}", style_body))
     story.append(Paragraph(
         f"Este valor é passível de restituição em dobro (CDC, art. 42, parágrafo único), "
         f"totalizando {format_br_money(perda_total_individual*2)}.", style_body
     ))
     story.append(Spacer(1, 0.3*cm))
 
-    story.append(Paragraph("5.5. Estimativa para Ação Civil Pública (Região de Guaxupé/MG)", style_heading2))
+    story.append(Paragraph("5.4. Estimativa para Ação Civil Pública (Região de Guaxupé/MG)", style_heading2))
     story.append(Paragraph("• Número estimado de clientes Vivo Fibra na região: 4.500", style_body))
     story.append(Paragraph(f"• Perda média por cliente: {format_br_money(perda_total_individual)}", style_body))
     story.append(Paragraph(f"• Danos materiais coletivos: 4.500 × {format_br_number(perda_total_individual)} = {format_br_money(danos_materiais_coletivos)}", style_body))
@@ -580,7 +599,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             fname = f"{base}{'' if prefix == '' else '_'+prefix}.png"
             img_path = os.path.join(graph_dir, fname)
             if os.path.exists(img_path):
-                # Não insere legenda descritiva
                 img = Image(img_path, width=16*cm, height=5.2*cm)
                 table_img = Table([[img]], colWidths=[16*cm])
                 table_img.setStyle(TableStyle([
@@ -596,10 +614,57 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             if len(clean[clean['Tool'] == tool]) > 1:
                 insert_images_for_prefix(tool, f'Gráficos - {tool}')
 
-    story.append(Spacer(1, 3*cm))
-    story.append(Paragraph(f"Responsável Técnico: {client_name}", style_left))
-    story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_left))
+    # Seção 9: Resumo Executivo
+    story.append(Paragraph("9. RESUMO EXECUTIVO", style_heading1))
+    story.append(Spacer(1, 0.3*cm))
 
+    # Coletar informações para o resumo
+    total_tests = len(clean)
+    periodo = f"{clean['Timestamp'].min().strftime('%d/%m/%Y')} a {clean['Timestamp'].max().strftime('%d/%m/%Y')}"
+    dl_med = overall_dl
+    ul_med = overall_ul
+    ping_med = combined_desc.loc['50%', 'Ping'] if '50%' in combined_desc.index else 0
+    pct_global = (dl_med / 500) * 100 if dl_med > 0 else 0
+    # Verifica se há dados de fim de semana e dia útil para throttling
+    if len(weekend_stats) == 2:
+        wk_med = weekend_stats[False]
+        we_med = weekend_stats[True]
+        throttling_desc = f"Redução de {(wk_med - we_med)/wk_med*100:.1f}% nos fins de semana (throttling detectado)."
+    else:
+        throttling_desc = "Não foi possível detectar throttling por falta de dados em um dos períodos."
+
+    resumo_texto = f"""
+    Este relatório analisou {total_tests} testes de velocidade realizados entre {periodo}.
+    A velocidade mediana de download foi de {dl_med:.1f} Mbps, o que representa apenas {pct_global:.1f}% da velocidade contratada (500 Mbps).
+    A mediana de upload foi de {ul_med:.1f} Mbps ({ul_med/250*100:.1f}% do contratado) e o ping médio foi de {ping_med:.1f} ms.
+    {throttling_desc}
+    Com base na velocidade entregue, o prejuízo financeiro individual acumulado em {meses} meses é de {format_br_money(perda_total_individual)}.
+    Esta perda, quando considerada para uma possível ação coletiva, pode ultrapassar {format_br_money(total_acao_coletiva)}.
+    """
+    story.append(Paragraph(resumo_texto, style_body))
+    story.append(Spacer(1, 1*cm))
+
+    # Localidade e data por extenso
+    story.append(Paragraph(f"Localidade: {address}", style_body))
+    data_extenso = datetime.now().strftime('%d de %B de %Y')
+    story.append(Paragraph(f"Data da emissão: {data_extenso}", style_body))
+    story.append(Spacer(1, 2*cm))
+
+    # Espaço para assinatura (10 linhas)
+    story.append(Paragraph("_________________________________________", style_body))
+    story.append(Paragraph("Assinatura do Responsável Técnico", style_body))
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("_________________________________________", style_body))
+    story.append(Paragraph("Assinatura do Advogado (se houver)", style_body))
+    story.append(Spacer(1, 2*cm))
+    story.append(Paragraph(f"Nome do Responsável Técnico: {client_name}", style_body))
+    story.append(Spacer(1, 0.3*cm))
+    if attorney_name:
+        story.append(Paragraph(f"Nome do Advogado: {attorney_name}", style_body))
+
+    # Rodapé final (já incluso)
+
+    # Se houver fatura anexada
     if bill_path and os.path.exists(bill_path):
         story.append(Spacer(1, 1*cm))
         story.append(Paragraph("Fatura anexada (PDF)", style_centered))
