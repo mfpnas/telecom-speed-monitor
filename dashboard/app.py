@@ -130,7 +130,7 @@ else:
     st.stop()
 
 # ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute) - using components
+# 5. AUTO REFRESH (default 1 minute)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
@@ -143,7 +143,6 @@ auto_refresh = refresh_interval != "Off"
 if auto_refresh:
     interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
     seconds = interval_map[refresh_interval]
-    # CORRECT: use st.components.v1.html (not st.sidebar.components)
     st.components.v1.html(
         f'<meta http-equiv="refresh" content="{seconds}">',
         height=0
@@ -180,14 +179,49 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 with tab1:
+    # Download Evolution
     fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
                    title='Download Evolution (bps)')
-    fig1.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
+    fig1.update_xaxes(
+        tickformat="%H:%M\n%m/%d",
+        dtick=300000,
+        rangeslider=dict(visible=True, thickness=0.05),
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1h", step="hour", stepmode="backward"),
+                dict(count=6, label="6h", step="hour", stepmode="backward"),
+                dict(count=1, label="1d", step="day", stepmode="backward"),
+                dict(count=7, label="7d", step="day", stepmode="backward"),
+                dict(step="all", label="All")
+            ])
+        )
+    )
+    # Mostrar últimos 20 registros inicialmente
+    if len(filtered) > 20:
+        last_20_time = filtered['Timestamp_local'].iloc[-20]
+        fig1.update_xaxes(range=[last_20_time, filtered['Timestamp_local'].max()])
     st.plotly_chart(fig1, width='stretch')
     
+    # Upload Evolution
     fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
-    fig2.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
+    fig2.update_xaxes(
+        tickformat="%H:%M\n%m/%d",
+        dtick=300000,
+        rangeslider=dict(visible=True, thickness=0.05),
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1h", step="hour", stepmode="backward"),
+                dict(count=6, label="6h", step="hour", stepmode="backward"),
+                dict(count=1, label="1d", step="day", stepmode="backward"),
+                dict(count=7, label="7d", step="day", stepmode="backward"),
+                dict(step="all", label="All")
+            ])
+        )
+    )
+    if len(filtered) > 20:
+        last_20_time = filtered['Timestamp_local'].iloc[-20]
+        fig2.update_xaxes(range=[last_20_time, filtered['Timestamp_local'].max()])
     st.plotly_chart(fig2, width='stretch')
 
 with tab2:

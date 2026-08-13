@@ -45,6 +45,16 @@ def format_br_number(value):
     decimal_part = parts[1] if len(parts) > 1 else '00'
     return f"{integer_part},{decimal_part}"
 
+def data_extenso(dt):
+    """Retorna data no formato '13 de Agosto de 2026'."""
+    meses = {
+        'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março',
+        'April': 'Abril', 'May': 'Maio', 'June': 'Junho',
+        'July': 'Julho', 'August': 'Agosto', 'September': 'Setembro',
+        'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'
+    }
+    return f"{dt.day} de {meses[dt.strftime('%B')]} de {dt.year}"
+
 # ------------------------------------------------------------
 # FUNÇÕES DE GERAÇÃO DE GRÁFICOS
 # ------------------------------------------------------------
@@ -139,7 +149,6 @@ def generate_plots(df, output_dir, tool=None):
 
     return output_dir
 
-
 # ------------------------------------------------------------
 # FUNÇÃO PRINCIPAL
 # ------------------------------------------------------------
@@ -167,23 +176,18 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         clean['Tool'] = 'All'
     tools = clean['Tool'].unique()
 
-    # Estatísticas combinadas
     combined_desc = clean[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
 
-    # Análise de throttling: detectar redução de velocidade nos finais de semana
     weekday_median_full = clean.groupby('DayOfWeek')['Download_Mbps'].median()
     weekdays_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
     dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-    combined_weekday_median = weekday_median_full.reindex(weekdays_order)
-    combined_weekday_median = combined_weekday_median.dropna()
+    combined_weekday_median = weekday_median_full.reindex(weekdays_order).dropna()
 
     weekend_stats_full = clean.groupby('IsWeekend')['Download_Mbps'].median()
-    weekend_stats = weekend_stats_full.reindex([False, True])
-    weekend_stats = weekend_stats.dropna()
+    weekend_stats = weekend_stats_full.reindex([False, True]).dropna()
 
     combined_pct_stats_full = clean.groupby('IsWeekend')[['Download_Mbps', 'Upload_Mbps']].median() / [500,250] * 100
-    combined_pct_stats = combined_pct_stats_full.reindex([False, True])
-    combined_pct_stats = combined_pct_stats.dropna()
+    combined_pct_stats = combined_pct_stats_full.reindex([False, True]).dropna()
 
     # Detecção de throttling
     has_weekend_data = len(weekend_stats) == 2
@@ -194,18 +198,12 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         we_med = weekend_stats[True]
         if wk_med > 0:
             throttling_percent = ((wk_med - we_med) / wk_med) * 100
-            if throttling_percent > 5:  # mais de 5% de redução caracteriza throttling
+            if throttling_percent > 5:
                 throttling_detected = True
 
-    # Verificar se houve interrupção da conexão (download ou upload zero)
+    # Interrupções
     connection_interruptions = len(df[df['Download'] == 0]) + len(df[df['Upload'] == 0])
-    interruption_periods = []
-    if connection_interruptions > 0:
-        interrupted_timestamps = df[(df['Download'] == 0) | (df['Upload'] == 0)]['Timestamp']
-        for ts in interrupted_timestamps:
-            interruption_periods.append(ts.strftime('%d/%m/%Y %H:%M'))
 
-    # Cálculo da perda financeira
     overall_median_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
     pct_global = (overall_median_dl / 500) * 100 if overall_median_dl > 0 else 0
     perda_mensal = valor_mensal * (1 - pct_global/100)
@@ -214,7 +212,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     danos_morais_coletivos = 5000 * 4500
     total_acao_coletiva = danos_materiais_coletivos + danos_morais_coletivos
 
-    # Gerar gráficos
     graph_dir = tempfile.mkdtemp()
     generate_plots(clean, graph_dir, tool=None)
     for tool in tools:
@@ -246,7 +243,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
 
     story = []
 
-    # Capa
+    # ------------------------------------------------------------
+    # CAPA
+    # ------------------------------------------------------------
     story.append(Spacer(1, 4*cm))
     story.append(Paragraph("RELATÓRIO TÉCNICO - JURÍDICO", style_title))
     story.append(Spacer(1, 0.5*cm))
@@ -260,12 +259,12 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 2*cm))
     if attorney_name:
         story.append(Paragraph(f"Advogado: {attorney_name}", style_centered))
-    story.append(Paragraph(address, style_centered))
+    # REMOVIDA a linha "Guaxupé, MG, Brazil" conforme solicitado
     story.append(Spacer(1, 1*cm))
-    story.append(Paragraph(f"Guaxupé, {datetime.now().strftime('%d de %B de %Y')}", style_centered))
+    story.append(Paragraph(f"Guaxupé, {data_extenso(datetime.now())}", style_centered))
     story.append(PageBreak())
 
-    # Sumário
+    # SUMÁRIO
     story.append(Paragraph("SUMÁRIO", style_heading1))
     story.append(Spacer(1, 0.5*cm))
     for sec in [
@@ -293,7 +292,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(Paragraph(sec, style_body))
     story.append(PageBreak())
 
-    # Seção 1: OBJETIVO (conclusivo)
+    # Seção 1
     story.append(Paragraph("1. OBJETIVO", style_heading1))
     objective_text = f"""
     Com base nas medições objetivas e contínuas realizadas entre {clean['Timestamp'].min().strftime('%d/%m/%Y')} e {clean['Timestamp'].max().strftime('%d/%m/%Y')}, 
@@ -301,7 +300,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     
     A velocidade mediana de download obtida foi de {overall_median_dl:.1f} Mbps, representando apenas {pct_global:.1f}% dos 500 Mbps contratados, 
     valor significativamente inferior ao mínimo de 80% exigido pela Resolução Anatel nº 632/2014.
-    
     """
     if throttling_detected:
         objective_text += f"""
@@ -325,7 +323,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(objective_text, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 2: METODOLOGIA
+    # Seção 2
     story.append(Paragraph("2. METODOLOGIA", style_heading1))
     story.append(Paragraph(
         "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
@@ -343,10 +341,10 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     ))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 3: ANÁLISE ESTATÍSTICA
+    # Seção 3
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
 
-    # 3.1 – apenas dias com dados
+    # 3.1
     story.append(Paragraph("3.1. Desempenho por Dia da Semana (dias com dados disponíveis)", style_heading2))
     if not combined_weekday_median.empty:
         dados_dia = [["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"]]
@@ -373,7 +371,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", style_body))
 
-    # 3.2 – comparar semana vs fim de semana
+    # 3.2
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
     if len(weekend_stats) == 2:
         wk_median = weekend_stats[False] if False in weekend_stats.index else 0
@@ -417,7 +415,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", style_body))
     story.append(Spacer(1, 0.3*cm))
 
-    # 3.3 – Análise de Throttling (detalhada)
+    # 3.3
     story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", style_heading2))
     if throttling_detected:
         throttle_text = f"""
@@ -435,7 +433,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(throttle_text, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 4: VELOCIDADE CONTRATADA VS ENTREGUE
+    # Seção 4
     story.append(Paragraph("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", style_heading1))
     story.append(Paragraph("4.1. Parâmetros Contratados", style_heading2))
     story.append(Paragraph("• Download: 500 Mbps", style_body))
@@ -496,7 +494,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     else:
         story.append(Paragraph("Não há dados para calcular os percentuais de entrega por período.", style_body))
 
-    # Seção 5: PERDA FINANCEIRA
+    # Seção 5
     story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
     story.append(Paragraph("5.1. Premissas", style_heading2))
     story.append(Paragraph(f"• Plano: {plan_name}", style_body))
@@ -556,7 +554,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"• Total estimado da ação civil pública: {format_br_money(total_acao_coletiva)}", style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 6: FUNDAMENTAÇÃO LEGAL
+    # Seção 6
     bloco_legal = []
     bloco_legal.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
     bloco_legal.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
@@ -583,7 +581,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(KeepTogether(bloco_legal))
     story.append(Spacer(1, 0.5*cm))
 
-    # Seção 7: RECOMENDAÇÕES
+    # Seção 7
     story.append(Paragraph("7. RECOMENDAÇÕES", style_heading1))
     story.append(Paragraph(
         "1. <b>Notificação extrajudicial à operadora</b> – Enviar notificação formal, com prazo de 15 (quinze) dias "
@@ -619,37 +617,69 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
-    # Seção 8: ANEXOS
+    # ------------------------------------------------------------
+    # 8. ANEXOS – GRÁFICOS (GRADE 2 COLUNAS)
+    # ------------------------------------------------------------
     story.append(Paragraph("8. ANEXOS – GRÁFICOS", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
-    def insert_images_for_prefix(prefix, title):
+    def insert_images_grid(prefix, title):
+        """Insere todos os gráficos de um prefixo em uma grade de 2 colunas numa única página."""
         story.append(Paragraph(title, style_heading2))
+        story.append(Spacer(1, 0.3*cm))
+
         bases = ['time_series', 'distribuicao', 'boxplot_sponsor', 'mapa_provedores_distancia', 'media_horaria', 'media_dia_semana']
+        img_paths = []
         for base in bases:
             fname = f"{base}{'' if prefix == '' else '_'+prefix}.png"
             img_path = os.path.join(graph_dir, fname)
             if os.path.exists(img_path):
-                img = Image(img_path, width=16*cm, height=5.2*cm)
-                table_img = Table([[img]], colWidths=[16*cm])
-                table_img.setStyle(TableStyle([
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ]))
-                story.append(KeepTogether([table_img, Spacer(1, 0.2*cm)]))
+                img_paths.append(img_path)
+
+        if not img_paths:
+            story.append(Paragraph("Nenhum gráfico disponível para esta seção.", style_body))
+            story.append(PageBreak())
+            return
+
+        # Criar linhas com 2 imagens cada
+        rows = []
+        row = []
+        for i, path in enumerate(img_paths):
+            img = Image(path, width=7.5*cm, height=5*cm)
+            row.append(img)
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:  # última linha com 1 imagem
+            row.append(Spacer(1, 0))  # célula vazia para completar a grade
+            rows.append(row)
+
+        # Criar tabela com 2 colunas
+        table_imgs = Table(rows, colWidths=[7.5*cm, 7.5*cm])
+        table_imgs.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0.1*cm),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0.1*cm),
+        ]))
+        story.append(KeepTogether([table_imgs, Spacer(1, 0.3*cm)]))
         story.append(PageBreak())
 
-    insert_images_for_prefix('', 'Gráficos Consolidados (Todas as Ferramentas)')
+    # Gráficos consolidados
+    insert_images_grid('', 'Gráficos Consolidados (Todas as Ferramentas)')
+
+    # Gráficos por ferramenta
     if len(tools) > 1:
         for tool in tools:
             if len(clean[clean['Tool'] == tool]) > 1:
-                insert_images_for_prefix(tool, f'Gráficos - {tool}')
+                insert_images_grid(tool, f'Gráficos - {tool}')
 
-    # Seção 9: RESUMO EXECUTIVO
+    # ------------------------------------------------------------
+    # 9. RESUMO EXECUTIVO
+    # ------------------------------------------------------------
     story.append(Paragraph("9. RESUMO EXECUTIVO", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
-    # Coletar informações para o resumo
     total_tests = len(clean)
     periodo = f"{clean['Timestamp'].min().strftime('%d/%m/%Y')} a {clean['Timestamp'].max().strftime('%d/%m/%Y')}"
     dl_med = overall_dl
@@ -673,13 +703,11 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(resumo_texto, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # Localidade e data por extenso
     story.append(Paragraph(f"Localidade: {address}", style_body))
-    data_extenso = datetime.now().strftime('%d de %B de %Y')
-    story.append(Paragraph(f"Data da emissão: {data_extenso}", style_body))
+    story.append(Paragraph(f"Data da emissão: {data_extenso(datetime.now())}", style_body))
     story.append(Spacer(1, 1.5*cm))
 
-    # Espaço para assinatura (10 linhas)
+    # Assinaturas
     story.append(Paragraph("_________________________________________", style_body))
     story.append(Paragraph("Responsável Técnico", style_body))
     story.append(Spacer(1, 0.5*cm))
@@ -687,7 +715,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph("Advogado", style_body))
     story.append(Spacer(1, 1*cm))
 
-    # Rodapé (sem repetir o nome)
     if bill_path and os.path.exists(bill_path):
         story.append(Spacer(1, 1*cm))
         story.append(Paragraph("Fatura anexada (PDF)", style_centered))
@@ -695,7 +722,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     doc.build(story)
     print(f"PDF gerado com sucesso: {output_path}")
     return output_path
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
