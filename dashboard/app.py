@@ -47,7 +47,6 @@ PLANS = {
     ],
 }
 
-# Default values
 DEFAULT_ISP = "VIVO"
 DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
 DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
@@ -131,7 +130,7 @@ else:
     st.stop()
 
 # ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute) - meta tag
+# 5. AUTO REFRESH (default 1 minute) - using st.iframe
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
@@ -144,7 +143,11 @@ auto_refresh = refresh_interval != "Off"
 if auto_refresh:
     interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
     seconds = interval_map[refresh_interval]
-    st.sidebar.markdown(f'<meta http-equiv="refresh" content="{seconds}">', unsafe_allow_html=True)
+    # CORRECT: inject meta refresh into <head> using an iframe
+    st.sidebar.components.v1.html(
+        f'<meta http-equiv="refresh" content="{seconds}">',
+        height=0
+    )
 
 if st.sidebar.button("Refresh Now"):
     st.rerun()

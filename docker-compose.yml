@@ -15,7 +15,7 @@ services:
       - telecom_net
 
   dashboard:
-    user: "1000:1000"   # <--- ADD THIS LINE
+    user: "1000:1000"
     build:
       context: .
       dockerfile: Dockerfile.dashboard
