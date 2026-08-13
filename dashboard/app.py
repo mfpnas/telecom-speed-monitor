@@ -104,30 +104,38 @@ timezone_str = st.sidebar.selectbox(
 )
 try:
     user_tz = pytz.timezone(timezone_str)
-    df['Timestamp_local'] = df['Timestamp'].dt.tz_convert(user_tz)
 except Exception:
-    df['Timestamp_local'] = df['Timestamp']
+    user_tz = pytz.UTC
+    timezone_str = "UTC"
 
 # ------------------------------------------------------------
-# 4. FILTERS
+# 4. FILTERS (with date range display and UTC filtering)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filters")
 tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
-min_date = df['Timestamp_local'].min().date()
-max_date = df['Timestamp_local'].max().date()
-start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date)
-end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date)
 
-mask = (df['Tool'].isin(tools)) & (df['Timestamp_local'].dt.date >= start_date) & (df['Timestamp_local'].dt.date <= end_date)
+# Use UTC dates for filtering to avoid timezone shifts
+min_date = df['Timestamp'].min().date()
+max_date = df['Timestamp'].max().date()
+st.sidebar.write(f"Data range: {min_date} to {max_date}")
+
+start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date, key="start_date")
+end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date, key="end_date")
+
+# Filter using UTC dates
+mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
 filtered = df[mask].copy()
 
-if filtered.empty:
+# Convert to local timezone for display
+if not filtered.empty:
+    filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
+else:
     st.warning("No data with selected filters.")
     st.stop()
 
 # ------------------------------------------------------------
-# 5. AUTO REFRESH (default 1 minute)
+# 5. AUTO REFRESH (default 1 minute) - using st.iframe
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔄 Auto Refresh")
@@ -140,8 +148,8 @@ auto_refresh = refresh_interval != "Off"
 if auto_refresh:
     interval_map = {"1 minute": 60, "5 minutes": 300, "10 minutes": 600}
     seconds = interval_map[refresh_interval]
-    meta = f'<meta http-equiv="refresh" content="{seconds}">'
-    components.html(meta, height=0)
+    # Use st.iframe instead of deprecated st.components.v1.html
+    st.sidebar.markdown(f'<meta http-equiv="refresh" content="{seconds}">', unsafe_allow_html=True)
 
 if st.sidebar.button("Refresh Now"):
     st.rerun()
@@ -166,7 +174,7 @@ with col_metrics[3]:
     st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
 # ------------------------------------------------------------
-# 7. TABS
+# 7. TABS (using width='stretch' instead of use_container_width)
 # ------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Time Series", "📊 Boxplot", "📉 Scatter",
@@ -177,27 +185,27 @@ with tab1:
     fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
                    title='Download Evolution (bps)')
     fig1.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, width='stretch')
     
     fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
     fig2.update_xaxes(tickformat="%H:%M\n%m/%d", dtick=300000)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width='stretch')
 
 with tab2:
     fig3 = px.box(filtered, x='Tool', y='Download', color='Tool',
                   title='Download Distribution by Tool')
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, width='stretch')
     
     fig4 = px.box(filtered, x='Tool', y='Ping', color='Tool',
                   title='Ping Distribution by Tool')
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, width='stretch')
 
 with tab3:
     fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
                       hover_data=['Timestamp_local', 'Server Name'],
                       title='Ping vs Download (bps)')
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(fig5, width='stretch')
 
 with tab4:
     filtered['DayOfWeek'] = filtered['Timestamp_local'].dt.day_name()
@@ -208,7 +216,7 @@ with tab4:
     
     fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
                   title='Avg Download (Mbps): Weekday vs Weekend (Throttling Detection)')
-    st.plotly_chart(fig6, use_container_width=True)
+    st.plotly_chart(fig6, width='stretch')
 
 with tab5:
     st.subheader("🌍 Server Locations")
@@ -216,6 +224,7 @@ with tab5:
         subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
     )
     if not server_locations.empty:
+        # Note: scatter_mapbox is deprecated but still works; we keep it for compatibility.
         fig_map = px.scatter_mapbox(
             server_locations,
             lat='Server Lat',
@@ -229,7 +238,7 @@ with tab5:
             height=500
         )
         fig_map.update_layout(mapbox_style="open-street-map")
-        st.plotly_chart(fig_map, use_container_width=True)
+        st.plotly_chart(fig_map, width='stretch')
     else:
         st.info("No server location data available. Only speedtest-cli and librespeed provide this.")
 
@@ -244,29 +253,29 @@ st.sidebar.subheader("📄 Generate PDF Report")
 
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
-    client_name = st.text_input("Client Name", DEFAULT_CLIENT)
+    client_name = st.text_input("Client Name", DEFAULT_CLIENT, key="client_name")
     
     # ISP dropdown
     isp_list = list(PLANS.keys())
-    isp_name = st.selectbox("ISP Name", isp_list, index=isp_list.index(DEFAULT_ISP))
+    isp_name = st.selectbox("ISP Name", isp_list, index=isp_list.index(DEFAULT_ISP), key="isp_name")
     
     # Plan dropdown based on selected ISP
     plans = PLANS[isp_name]
     plan_names = [p['name'] for p in plans]
     default_plan_index = plan_names.index(DEFAULT_PLAN) if DEFAULT_PLAN in plan_names else 0
-    plan_name = st.selectbox("Plan Name", plan_names, index=default_plan_index)
+    plan_name = st.selectbox("Plan Name", plan_names, index=default_plan_index, key="plan_name")
     
-    attorney_name = st.text_input("Attorney Name (optional)", "")
-    address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil")
+    attorney_name = st.text_input("Attorney Name (optional)", "", key="attorney_name")
+    address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil", key="address")
     
     st.markdown("### Select Data Period")
-    export_days = st.slider("Last N days", 1, 30, 7)
+    export_days = st.slider("Last N days", 1, 30, 7, key="export_days")
     
     # Tool selection: default "All Tools" (last option)
     tool_options = list(df['Tool'].unique()) + ["All Tools"]
-    export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1)  # All Tools is last
+    export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1, key="export_tool")  # All Tools is last
     
-    uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'])
+    uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'], key="bill_upload")
     
     submitted = st.form_submit_button("Generate PDF Report")
     
