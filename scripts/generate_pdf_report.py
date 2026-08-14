@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate a comprehensive court-ready PDF report from speed test data,
-including per‑tool analysis and the full legal sections.
+using only speedtest-cli and LibreSpeed for analysis and graphics.
 """
 import argparse
 import os
@@ -55,125 +55,139 @@ def data_extenso(dt):
     return f"{dt.day} de {meses[dt.strftime('%B')]} de {dt.year}"
 
 # ------------------------------------------------------------
-# GERAÇÃO DE GRÁFICOS
+# GERAÇÃO DE GRÁFICOS COMPARATIVOS (speedtest-cli vs LibreSpeed)
 # ------------------------------------------------------------
-def generate_plots(df, output_dir, tool=None):
-    if tool:
-        title_suffix = f" - {tool}"
-    else:
-        title_suffix = ""
+def generate_comparison_plots(df_speed, df_librespeed, output_dir):
+    """
+    Gera gráficos comparativos entre speedtest-cli e LibreSpeed,
+    e também um gráfico com as medianas de cada ferramenta.
+    Retorna uma lista com os caminhos dos arquivos de imagem gerados,
+    para serem inseridos no PDF.
+    """
+    # Preparar dados
+    df_speed = df_speed.copy()
+    df_librespeed = df_librespeed.copy()
+    # Adicionar coluna de ferramenta
+    df_speed['Tool'] = 'speedtest-cli'
+    df_librespeed['Tool'] = 'librespeed'
+    combined = pd.concat([df_speed, df_librespeed], ignore_index=True)
 
-    # Para Fast, gerar apenas gráfico de download (upload e ping são zero)
-    if tool == 'fast':
-        fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(df['Timestamp'], df['Download_Mbps'], alpha=0.7, label='Download', color='purple')
-        ax.set_title(f'Evolução do Download - Fast.com{title_suffix}')
-        ax.set_xlabel('Data/Hora')
-        ax.set_ylabel('Mbps')
-        ax.legend()
-        plt.tight_layout()
-        fname = f"time_series_{tool}.png"
-        plt.savefig(os.path.join(output_dir, fname), dpi=200)
-        plt.close()
-        # Distribuição de Download
-        fig, ax = plt.subplots(figsize=(10, 5))
-        sns.histplot(df['Download_Mbps'], bins=30, kde=True, ax=ax, color='purple')
-        ax.axvline(df['Download_Mbps'].median(), color='red', linestyle='--',
-                   label=f'Mediana: {df["Download_Mbps"].median():.1f} Mbps')
-        ax.set_title(f'Distribuição do Download - Fast.com{title_suffix}')
-        ax.legend()
-        plt.tight_layout()
-        fname = f"distribuicao_{tool}.png"
-        plt.savefig(os.path.join(output_dir, fname), dpi=200)
-        plt.close()
-        # Não gerar boxplot (só uma ferramenta) ou mapa
-        return output_dir
-
-    # Para as demais ferramentas, gráficos completos
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(df['Timestamp'], df['Download_Mbps'], alpha=0.3, label='Download (bruto)')
-    ax.plot(df['Timestamp'], df['Upload_Mbps'], alpha=0.3, label='Upload (bruto)')
-    ma_dl = df['Download_Mbps'].rolling(10, min_periods=1).mean()
-    ma_ul = df['Upload_Mbps'].rolling(10, min_periods=1).mean()
-    ax.plot(df['Timestamp'], ma_dl, 'r-', linewidth=2, label='Download (MA10)')
-    ax.plot(df['Timestamp'], ma_ul, 'b-', linewidth=2, label='Upload (MA10)')
-    ax.set_title(f'Evolução das Velocidades (MA10){title_suffix}')
-    ax.set_xlabel('Data/Hora')
-    ax.set_ylabel('Mbps')
-    ax.legend(loc='upper left')
-    plt.tight_layout()
-    fname = f"time_series{'_{}'.format(tool) if tool else ''}.png"
-    plt.savefig(os.path.join(output_dir, fname), dpi=200)
-    plt.close()
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    sns.histplot(df['Download_Mbps'], bins=60, kde=True, ax=axes[0], color='green')
-    axes[0].axvline(df['Download_Mbps'].median(), color='red', linestyle='--',
-                    label=f'Mediana: {df["Download_Mbps"].median():.1f} Mbps')
-    axes[0].set_title(f'Distribuição do Download{title_suffix}')
+    # 1. Time Series: Download e Upload (sobrepostos)
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+    for tool, df in [('speedtest-cli', df_speed), ('librespeed', df_librespeed)]:
+        axes[0].plot(df['Timestamp'], df['Download_Mbps'], alpha=0.5, label=tool)
+        axes[1].plot(df['Timestamp'], df['Upload_Mbps'], alpha=0.5, label=tool)
+    axes[0].set_title('Evolução do Download')
+    axes[0].set_ylabel('Mbps')
     axes[0].legend()
-    sns.histplot(df['Upload_Mbps'], bins=60, kde=True, ax=axes[1], color='orange')
-    axes[1].axvline(df['Upload_Mbps'].median(), color='red', linestyle='--',
-                    label=f'Mediana: {df["Upload_Mbps"].median():.1f} Mbps')
-    axes[1].set_title(f'Distribuição do Upload{title_suffix}')
+    axes[1].set_title('Evolução do Upload')
+    axes[1].set_ylabel('Mbps')
     axes[1].legend()
     plt.tight_layout()
-    fname = f"distribuicao{'_{}'.format(tool) if tool else ''}.png"
-    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    fname_ts = 'time_series_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_ts), dpi=200)
     plt.close()
 
-    if len(df['Sponsor'].unique()) > 1:
-        plt.figure(figsize=(12, 6))
-        sns.boxplot(data=df, x='Sponsor', y='Download_Mbps', hue='Sponsor', palette='Set3', legend=False)
-        plt.xticks(rotation=45, ha='right')
-        plt.title(f'Velocidade de Download por Provedor{title_suffix}')
-        plt.ylabel('Download (Mbps)')
-        plt.tight_layout()
-        fname = f"boxplot_sponsor{'_{}'.format(tool) if tool else ''}.png"
-        plt.savefig(os.path.join(output_dir, fname), dpi=200)
-        plt.close()
-
-    if 'Distance' in df.columns and df['Distance'].notna().any():
-        plt.figure(figsize=(12, 6))
-        scatter = plt.scatter(df['Distance'], df['Download_Mbps'],
-                              c=df['Ping'], cmap='plasma', alpha=0.5, s=10)
-        plt.colorbar(scatter, label='Ping (ms)')
-        plt.xlabel('Distância (km)')
-        plt.ylabel('Download (Mbps)')
-        plt.title(f'Relação Distância vs Download{title_suffix}')
-        plt.tight_layout()
-        fname = f"mapa_provedores_distancia{'_{}'.format(tool) if tool else ''}.png"
-        plt.savefig(os.path.join(output_dir, fname), dpi=200)
-        plt.close()
-
-    df['Hour'] = df['Timestamp'].dt.hour
-    hourly = df.groupby('Hour')[['Download_Mbps', 'Upload_Mbps']].mean()
-    fig, ax = plt.subplots(figsize=(12, 5))
-    hourly.plot(kind='bar', ax=ax, color=['green', 'orange'])
-    ax.set_title(f'Velocidade Média por Hora do Dia{title_suffix}')
-    ax.set_xlabel('Hora')
-    ax.set_ylabel('Mbps')
+    # 2. Distribuição: Download e Upload (lado a lado)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    for tool, df in [('speedtest-cli', df_speed), ('librespeed', df_librespeed)]:
+        sns.histplot(df['Download_Mbps'], kde=True, label=tool, ax=axes[0], alpha=0.5)
+        sns.histplot(df['Upload_Mbps'], kde=True, label=tool, ax=axes[1], alpha=0.5)
+    axes[0].set_title('Distribuição do Download')
+    axes[0].set_xlabel('Mbps')
+    axes[0].legend()
+    axes[1].set_title('Distribuição do Upload')
+    axes[1].set_xlabel('Mbps')
+    axes[1].legend()
     plt.tight_layout()
-    fname = f"media_horaria{'_{}'.format(tool) if tool else ''}.png"
-    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    fname_dist = 'distribuicao_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_dist), dpi=200)
     plt.close()
 
+    # 3. Boxplot por ferramenta (download e upload)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    sns.boxplot(data=combined, x='Tool', y='Download_Mbps', ax=axes[0])
+    axes[0].set_title('Download por Ferramenta')
+    sns.boxplot(data=combined, x='Tool', y='Upload_Mbps', ax=axes[1])
+    axes[1].set_title('Upload por Ferramenta')
+    plt.tight_layout()
+    fname_box = 'boxplot_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_box), dpi=200)
+    plt.close()
+
+    # 4. Scatter: Ping vs Download (comparativo)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for tool, df in [('speedtest-cli', df_speed), ('librespeed', df_librespeed)]:
+        ax.scatter(df['Ping'], df['Download_Mbps'], alpha=0.5, label=tool, s=10)
+    ax.set_xlabel('Ping (ms)')
+    ax.set_ylabel('Download (Mbps)')
+    ax.set_title('Relação Ping vs Download')
+    ax.legend()
+    plt.tight_layout()
+    fname_scatter = 'scatter_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_scatter), dpi=200)
+    plt.close()
+
+    # 5. Média horária (comparativa)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for tool, df in [('speedtest-cli', df_speed), ('librespeed', df_librespeed)]:
+        df['Hour'] = df['Timestamp'].dt.hour
+        hourly = df.groupby('Hour')['Download_Mbps'].mean()
+        ax.plot(hourly.index, hourly.values, marker='o', label=tool)
+    ax.set_xlabel('Hora do Dia')
+    ax.set_ylabel('Download Médio (Mbps)')
+    ax.set_title('Média Horária do Download')
+    ax.legend()
+    plt.tight_layout()
+    fname_hour = 'hourly_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_hour), dpi=200)
+    plt.close()
+
+    # 6. Média por dia da semana (comparativa)
     dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-    weekday_avg = df.groupby('DayOfWeek')[['Download_Mbps', 'Upload_Mbps']].mean().reindex(
-        ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-    )
-    weekday_avg.index = dias_pt
-    fig, ax = plt.subplots(figsize=(10, 5))
-    weekday_avg.plot(kind='bar', ax=ax, color=['green', 'orange'])
-    ax.set_title(f'Velocidade Média por Dia da Semana{title_suffix}')
-    ax.set_xlabel('Dia')
-    ax.set_ylabel('Mbps')
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for tool, df in [('speedtest-cli', df_speed), ('librespeed', df_librespeed)]:
+        df['DayOfWeek'] = df['Timestamp'].dt.day_name()
+        weekday_avg = df.groupby('DayOfWeek')['Download_Mbps'].mean().reindex(
+            ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+        )
+        weekday_avg.index = dias_pt
+        ax.plot(weekday_avg.index, weekday_avg.values, marker='s', label=tool)
+    ax.set_xlabel('Dia da Semana')
+    ax.set_ylabel('Download Médio (Mbps)')
+    ax.set_title('Média por Dia da Semana')
+    ax.legend()
     plt.tight_layout()
-    fname = f"media_dia_semana{'_{}'.format(tool) if tool else ''}.png"
-    plt.savefig(os.path.join(output_dir, fname), dpi=200)
+    fname_week = 'weekday_comparison.png'
+    plt.savefig(os.path.join(output_dir, fname_week), dpi=200)
     plt.close()
 
-    return output_dir
+    # 7. Gráfico de medianas (barras)
+    med_speed_dl = df_speed['Download_Mbps'].median()
+    med_speed_ul = df_speed['Upload_Mbps'].median()
+    med_libre_dl = df_librespeed['Download_Mbps'].median()
+    med_libre_ul = df_librespeed['Upload_Mbps'].median()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(2)
+    width = 0.35
+    ax.bar(x - width/2, [med_speed_dl, med_speed_ul], width, label='speedtest-cli')
+    ax.bar(x + width/2, [med_libre_dl, med_libre_ul], width, label='librespeed')
+    ax.set_xticks(x)
+    ax.set_xticklabels(['Download', 'Upload'])
+    ax.set_ylabel('Mediana (Mbps)')
+    ax.set_title('Mediana das Velocidades por Ferramenta')
+    ax.legend()
+    plt.tight_layout()
+    fname_med = 'medianas.png'
+    plt.savefig(os.path.join(output_dir, fname_med), dpi=200)
+    plt.close()
+
+    # Retornar lista de arquivos gerados (para usar na seção 8)
+    return [
+        fname_ts, fname_dist, fname_box, fname_scatter,
+        fname_hour, fname_week, fname_med
+    ]
 
 # ------------------------------------------------------------
 # FUNÇÃO PRINCIPAL
@@ -181,6 +195,9 @@ def generate_plots(df, output_dir, tool=None):
 def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
                                   attorney_name="", address="", bill_path=None,
                                   output_path="report.pdf", valor_mensal=172.00, meses=48):
+    # Corrigir grafia de "Brazil" para "Brasil" no endereço
+    address = address.replace("Brazil", "Brasil")
+
     df = df_orig.copy()
     if 'Timestamp' in df.columns:
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
@@ -192,38 +209,47 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     df['DayOfWeek'] = df['Timestamp'].dt.day_name()
     df['IsWeekend'] = df['DayOfWeek'].isin(['Saturday', 'Sunday'])
 
-    # Limpeza específica por ferramenta
-    def is_valid(row):
+    # ------------------------------------------------------------
+    # Cálculo da taxa de sucesso para TODAS as ferramentas (para a tabela)
+    # ------------------------------------------------------------
+    # Função de validação específica por ferramenta
+    def is_valid_general(row):
         if row['Tool'] == 'fast':
             return row['Download'] > 0
         else:
             return (row['Download'] > 0) & (row['Upload'] > 0) & (row['Ping'] < 10000)
 
-    df['Tool'] = df.get('Tool', 'unknown')
-    clean = df[df.apply(is_valid, axis=1)].copy()
-    if clean.empty:
-        raise ValueError("No valid data after cleaning")
-
-    tools = clean['Tool'].unique()
-
-    # Estatísticas por ferramenta (taxa de sucesso)
     success_data = []
     for tool in df['Tool'].unique():
         total = len(df[df['Tool'] == tool])
-        valid = len(clean[clean['Tool'] == tool])
+        valid = len(df[df['Tool'] == tool][df.apply(is_valid_general, axis=1)])
         rate = (valid / total * 100) if total > 0 else 0
         success_data.append([tool, total, valid, f"{rate:.1f}%"])
 
-    # Usar apenas ferramentas confiáveis para a mediana principal
-    trusted_tools = ['speedtest-cli', 'librespeed']
-    trusted = clean[clean['Tool'].isin(trusted_tools)]
-    if trusted.empty:
-        # Fallback: usar todas as ferramentas
-        trusted = clean
+    # ------------------------------------------------------------
+    # Filtragem para análise: apenas speedtest-cli e librespeed
+    # ------------------------------------------------------------
+    def is_valid(row):
+        return (row['Download'] > 0) & (row['Upload'] > 0) & (row['Ping'] < 10000)
 
-    combined_desc = trusted[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
+    allowed_tools = ['speedtest-cli', 'librespeed']
+    df_filtered = df[df['Tool'].isin(allowed_tools)].copy()
 
-    # Análise por dia da semana (apenas dias com dados)
+    if df_filtered.empty:
+        raise ValueError("No data from speedtest-cli or librespeed found.")
+
+    clean = df_filtered[df_filtered.apply(is_valid, axis=1)].copy()
+    if clean.empty:
+        raise ValueError("No valid data after cleaning")
+
+    # Separar por ferramenta
+    df_speed = clean[clean['Tool'] == 'speedtest-cli']
+    df_librespeed = clean[clean['Tool'] == 'librespeed']
+
+    # Para estatísticas, usar ambas combinadas
+    combined_desc = clean[['Download_Mbps', 'Upload_Mbps', 'Ping']].describe()
+
+    # Análise por dia da semana
     weekday_median_full = clean.groupby('DayOfWeek')['Download_Mbps'].median()
     weekdays_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
     dias_pt = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
@@ -241,6 +267,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     has_weekend_data = len(weekend_stats) == 2
     throttling_detected = False
     throttling_percent = 0
+    wk_med = we_med = 0
     if has_weekend_data:
         wk_med = weekend_stats[False]
         we_med = weekend_stats[True]
@@ -249,10 +276,10 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             if throttling_percent > 5:
                 throttling_detected = True
 
-    # Interrupções (download ou upload zero)
-    connection_interruptions = len(df[df['Download'] == 0]) + len(df[df['Upload'] == 0])
+    # Interrupções (nas duas ferramentas)
+    connection_interruptions = len(df_filtered[df_filtered['Download'] == 0]) + len(df_filtered[df_filtered['Upload'] == 0])
 
-    # Perda financeira usando mediana das ferramentas confiáveis
+    # Perda financeira
     overall_median_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
     pct_global = (overall_median_dl / 500) * 100 if overall_median_dl > 0 else 0
     perda_mensal = valor_mensal * (1 - pct_global/100)
@@ -261,12 +288,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     danos_morais_coletivos = 5000 * 4500
     total_acao_coletiva = danos_materiais_coletivos + danos_morais_coletivos
 
-    # Gerar gráficos
+    # Gerar gráficos comparativos
     graph_dir = tempfile.mkdtemp()
-    generate_plots(clean, graph_dir, tool=None)
-    for tool in tools:
-        if len(clean[clean['Tool'] == tool]) > 1:
-            generate_plots(clean[clean['Tool'] == tool], graph_dir, tool=tool)
+    comparison_images = generate_comparison_plots(df_speed, df_librespeed, graph_dir)
 
     # ------------------------------------------------------------
     # CONSTRUIR O PDF
@@ -303,7 +327,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"Plano: {plan_name}", style_body))
     story.append(Paragraph(f"Operadora: {isp_name}", style_body))
     story.append(Paragraph(f"Período de Medição: {clean['Timestamp'].min().strftime('%d/%m/%Y')} a {clean['Timestamp'].max().strftime('%d/%m/%Y')}", style_body))
-    story.append(Paragraph(f"Base de Dados: {len(clean)} registros válidos", style_body))
+    story.append(Paragraph(f"Base de Dados: {len(clean)} registros válidos (speedtest-cli + librespeed)", style_body))
     story.append(Spacer(1, 2*cm))
     if attorney_name:
         story.append(Paragraph(f"Advogado: {attorney_name}", style_centered))
@@ -333,7 +357,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "   5.5. Estimativa para Ação Civil Pública",
         "6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA",
         "7. RECOMENDAÇÕES",
-        "8. ANEXOS",
+        "8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS",
         "9. RESUMO EXECUTIVO",
     ]:
         story.append(Paragraph(sec, style_body))
@@ -343,7 +367,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph("1. OBJETIVO", style_heading1))
     objective_text = f"""
     Com base nas medições objetivas e contínuas realizadas entre {clean['Timestamp'].min().strftime('%d/%m/%Y')} e {clean['Timestamp'].max().strftime('%d/%m/%Y')}, 
-    este relatório comprova que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no plano {plan_name}.
+    utilizando as ferramentas speedtest-cli e LibreSpeed, este relatório comprova que a prestadora {isp_name} não está cumprindo a velocidade de download e upload contratadas no plano {plan_name}.
     
     A velocidade mediana de download obtida foi de {overall_median_dl:.1f} Mbps, representando apenas {pct_global:.1f}% dos 500 Mbps contratados, 
     valor significativamente inferior ao mínimo de 80% exigido pela Resolução Anatel nº 632/2014.
@@ -370,7 +394,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(objective_text, style_body))
     story.append(Spacer(1, 0.5*cm))
 
-    # 2. METODOLOGIA (com descrição das ferramentas)
+    # 2. METODOLOGIA (com descrição das ferramentas, tabela e texto)
     story.append(Paragraph("2. METODOLOGIA", style_heading1))
     story.append(Paragraph(
         "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
@@ -379,10 +403,8 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         style_body
     ))
     
-    # ----- ALTERAÇÃO AQUI: lista com bullets e indentação -----
+    # Breve descrição das ferramentas (lista com bullets)
     story.append(Paragraph("Cada ferramenta tem características específicas:", style_body))
-    
-    # Estilo para itens da lista (com bullet '-' e indentação)
     item_style = ParagraphStyle(
         'ListItem',
         parent=style_body,
@@ -390,19 +412,19 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         bulletText='- ',
         spaceAfter=2,
     )
-    
     itens = [
         "speedtest-cli (Ookla): Mede download, upload e latência. É a mais confiável e amplamente utilizada.",
         "LibreSpeed (via npx): Semelhante ao speedtest-cli, código aberto. Também fornece geolocalização do servidor.",
         "Fast.com (Netflix): Mede apenas download, com servidores otimizados para streaming. Não mede upload nem latência.",
         "iPerf3: Mede throughput TCP/UDP, mas depende de servidores públicos que podem estar indisponíveis, resultando em falhas frequentes.",
     ]
-    
     for item in itens:
         story.append(Paragraph(item, item_style))
-    # ---------------------------------------------------------
-
-    # Tabela de taxa de sucesso
+    
+    # Espaçamento entre a lista e a tabela
+    story.append(Spacer(1, 0.3*cm))
+    
+    # Tabela de taxa de sucesso (com todas as ferramentas)
     table_success = Table([["Ferramenta", "Total Testes", "Válidos", "Taxa de Sucesso"]] + success_data,
                           colWidths=[4*cm, 3*cm, 3*cm, 4*cm])
     table_success.setStyle(TableStyle([
@@ -418,9 +440,14 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(KeepTogether([table_success, Spacer(1, 0.3*cm)]))
+    
+    # Espaçamento após a tabela
+    story.append(Spacer(1, 0.3*cm))
+    
+    # Parágrafo explicativo sobre a análise estatística focada nas duas ferramentas
     story.append(Paragraph(
-        "A análise estatística principal (mediana, percentuais) foi calculada utilizando apenas as ferramentas mais confiáveis: "
-        "speedtest-cli e LibreSpeed. As demais ferramentas são incluídas nos gráficos individuais para referência.",
+        "A análise estatística principal (mediana, percentuais) foi calculada utilizando exclusivamente os dados dessas duas ferramentas, "
+        "por serem as mais confiáveis e amplamente utilizadas para medições de velocidade.",
         style_body
     ))
     story.append(Spacer(1, 0.5*cm))
@@ -458,14 +485,12 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     # 3.2 Comparação weekend
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", style_heading2))
     if len(weekend_stats) == 2:
-        wk_median = weekend_stats[False]
-        we_median = weekend_stats[True]
         upload_weekday = clean[~clean['IsWeekend']]['Upload_Mbps'].median() if not clean[~clean['IsWeekend']].empty else 0
         upload_weekend = clean[clean['IsWeekend']]['Upload_Mbps'].median() if not clean[clean['IsWeekend']].empty else 0
         dados_comp = [
             ["Período", "Mediana Download (Mbps)", "% da Contratada", "Mediana Upload (Mbps)", "% da Contratada (250)"],
-            ["Dias de semana (2ª a 6ª)", f"{wk_median:.1f}", f"{(wk_median/500)*100:.1f}%", f"{upload_weekday:.1f}", f"{(upload_weekday/250)*100:.1f}%"],
-            ["Fins de semana (Sáb+Dom)", f"{we_median:.1f}", f"{(we_median/500)*100:.1f}%", f"{upload_weekend:.1f}", f"{(upload_weekend/250)*100:.1f}%"],
+            ["Dias de semana (2ª a 6ª)", f"{wk_med:.1f}", f"{(wk_med/500)*100:.1f}%", f"{upload_weekday:.1f}", f"{(upload_weekday/250)*100:.1f}%"],
+            ["Fins de semana (Sáb+Dom)", f"{we_med:.1f}", f"{(we_med/500)*100:.1f}%", f"{upload_weekend:.1f}", f"{(upload_weekend/250)*100:.1f}%"],
         ]
         table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
         table_comp.setStyle(TableStyle([
@@ -481,7 +506,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
         story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
-        reducao = ((wk_median - we_median) / wk_median) * 100 if wk_median > 0 else 0
+        reducao = ((wk_med - we_med) / wk_med) * 100 if wk_med > 0 else 0
         story.append(Paragraph(
             f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia gestão de tráfego sem aviso prévio.",
             style_body
@@ -495,7 +520,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     if throttling_detected:
         throttle_text = f"""
         A análise dos dados coletados revelou a prática de throttling (redução arbitrária de velocidade) nos fins de semana. 
-        A velocidade mediana de download nos dias úteis foi de {wk_median:.1f} Mbps, enquanto nos fins de semana caiu para {we_median:.1f} Mbps, 
+        A velocidade mediana de download nos dias úteis foi de {wk_med:.1f} Mbps, enquanto nos fins de semana caiu para {we_med:.1f} Mbps, 
         representando uma redução de {throttling_percent:.1f}%. 
         Esta redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º), 
         ao direito à informação adequada (CDC, art. 6º, III) e à boa-fé objetiva (CDC, art. 4º, III).
@@ -515,7 +540,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph("• Upload: 250 Mbps", style_body))
     story.append(Spacer(1, 0.3*cm))
 
-    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (dados consolidados)", style_heading2))
+    story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (dados consolidados das duas ferramentas)", style_heading2))
     desc_data = [["Estatística", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]]
     for stat in combined_desc.index:
         desc_data.append([
@@ -692,24 +717,25 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
-    # 8. ANEXOS (grade de gráficos)
-    story.append(Paragraph("8. ANEXOS – GRÁFICOS", style_heading1))
+    # 8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS
+    story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
-    def insert_images_grid(prefix, title):
+    def insert_comparison_grid(prefix, title):
         story.append(Paragraph(title, style_heading2))
         story.append(Spacer(1, 0.3*cm))
-        bases = ['time_series', 'distribuicao', 'boxplot_sponsor', 'mapa_provedores_distancia', 'media_horaria', 'media_dia_semana']
+        # Buscar os arquivos que começam com prefixo (ex: 'time_series_comparison')
         img_paths = []
-        for base in bases:
-            fname = f"{base}{'' if prefix == '' else '_'+prefix}.png"
-            img_path = os.path.join(graph_dir, fname)
-            if os.path.exists(img_path):
-                img_paths.append(img_path)
+        for fname in comparison_images:
+            if fname.startswith(prefix):
+                img_path = os.path.join(graph_dir, fname)
+                if os.path.exists(img_path):
+                    img_paths.append(img_path)
         if not img_paths:
             story.append(Paragraph("Nenhum gráfico disponível para esta seção.", style_body))
             story.append(PageBreak())
             return
+        # Organizar em grade de 2 colunas
         rows = []
         row = []
         for i, path in enumerate(img_paths):
@@ -731,13 +757,24 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         story.append(KeepTogether([table_imgs, Spacer(1, 0.3*cm)]))
         story.append(PageBreak())
 
-    # Gráficos consolidados
-    insert_images_grid('', 'Gráficos Consolidados (Todas as Ferramentas)')
-    # Gráficos por ferramenta
-    if len(tools) > 1:
-        for tool in tools:
-            if len(clean[clean['Tool'] == tool]) > 1:
-                insert_images_grid(tool, f'Gráficos - {tool}')
+    # Inserir gráficos comparativos (todos exceto o de medianas)
+    insert_comparison_grid('time_series_comparison', 'Evolução Temporal (speedtest-cli vs LibreSpeed)')
+    insert_comparison_grid('distribuicao_comparison', 'Distribuição das Velocidades')
+    insert_comparison_grid('boxplot_comparison', 'Boxplot por Ferramenta')
+    insert_comparison_grid('scatter_comparison', 'Ping vs Download')
+    insert_comparison_grid('hourly_comparison', 'Média Horária')
+    insert_comparison_grid('weekday_comparison', 'Média por Dia da Semana')
+
+    # Página especial para a mediana
+    story.append(Paragraph("Mediana das Velocidades por Ferramenta", style_heading2))
+    story.append(Spacer(1, 0.3*cm))
+    median_path = os.path.join(graph_dir, 'medianas.png')
+    if os.path.exists(median_path):
+        img = Image(median_path, width=14*cm, height=8*cm)
+        story.append(KeepTogether([img, Spacer(1, 0.3*cm)]))
+    else:
+        story.append(Paragraph("Gráfico de medianas não disponível.", style_body))
+    story.append(PageBreak())
 
     # 9. RESUMO EXECUTIVO
     story.append(Paragraph("9. RESUMO EXECUTIVO", style_heading1))
@@ -756,7 +793,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         throttling_desc = "Não foi possível confirmar throttling por falta de dados em um dos períodos."
 
     resumo_texto = f"""
-    Este relatório analisou {total_tests} testes de velocidade realizados entre {periodo}.
+    Este relatório analisou {total_tests} testes de velocidade (speedtest-cli e LibreSpeed) realizados entre {periodo}.
     A velocidade mediana de download foi de {dl_med:.1f} Mbps, o que representa apenas {pct_global:.1f}% da velocidade contratada (500 Mbps).
     A mediana de upload foi de {ul_med:.1f} Mbps ({ul_med/250*100:.1f}% do contratado) e o ping médio foi de {ping_med:.1f} ms.
     {throttling_desc}
