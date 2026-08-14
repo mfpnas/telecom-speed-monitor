@@ -324,7 +324,7 @@ with st.sidebar.form("pdf_report_form"):
     address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil", key="address")
     
     st.markdown("### Select Data Period")
-    export_days = st.slider("Last N days", 1, 30, 7, key="export_days")
+    export_days = st.slider("Last N days", 1, 45, 7, key="export_days")
     
     tool_options = list(df['Tool'].unique()) + ["All Tools"]
     export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1, key="export_tool")
