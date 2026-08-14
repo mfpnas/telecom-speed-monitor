@@ -1,6 +1,6 @@
 # 📡 Telecom Speed Monitor
 
-**A complete, self‑hosted solution to monitor internet speed, detect throttling, and generate court‑ready PDF reports for lawsuits against ISPs (Brazilian Anatel standard).**
+**A complete, self‑hosted solution to continuously monitor internet speed, detect throttling, and generate court‑ready PDF reports for lawsuits against ISPs (Anatel‑compliant).**
 
 ---
 
@@ -8,25 +8,26 @@
 
 1. [Overview](#overview)
 2. [Why This Tool Exists](#why-this-tool-exists)
-3. [Features](#features)
-4. [Architecture](#architecture)
-5. [Prerequisites](#prerequisites)
-6. [Installation](#installation)
-7. [Configuration](#configuration)
-8. [Running the System](#running-the-system)
-9. [Monitoring & Health Checks](#monitoring--health-checks)
-10. [Generating Legal Reports](#generating-legal-reports)
-11. [Troubleshooting](#troubleshooting)
-12. [Contributing](#contributing)
-13. [License & Disclaimer](#license--disclaimer)
+3. [What’s New](#whats-new)
+4. [Features](#features)
+5. [Architecture](#architecture)
+6. [Prerequisites](#prerequisites)
+7. [Installation](#installation)
+8. [Configuration](#configuration)
+9. [Running the System](#running-the-system)
+10. [Monitoring & Health Checks](#monitoring--health-checks)
+11. [Generating Legal Reports](#generating-legal-reports)
+12. [Troubleshooting](#troubleshooting)
+13. [Contributing](#contributing)
+14. [License & Disclaimer](#license--disclaimer)
 
 ---
 
 ## Overview
 
-**Telecom Speed Monitor** continuously tests your internet connection using **four different tools** (`speedtest-cli`, `LibreSpeed`, `Fast.com`, and `iPerf3`). It stores the results in a standardized CSV format, provides a **real‑time dashboard** with advanced analytics, and generates **professional, legally‑admissible PDF reports** to document underperformance and throttling by Internet Service Providers (ISPs).
+**Telecom Speed Monitor** continuously tests your internet connection using **four different tools** (`speedtest-cli`, `LibreSpeed`, `Fast.com`, and `iPerf3`). It stores results in a standardised CSV format, provides a **real‑time dashboard** with advanced analytics, and generates **professional, legally‑admissible PDF reports** that document underperformance and throttling by Internet Service Providers (ISPs).
 
-> 🇧🇷 This tool was designed with **Brazilian consumers** in mind, using the **Anatel Resolution nº 632/2014** as a reference (minimum 80% of advertised speed). It is equally useful in any jurisdiction where documented evidence of throttling is needed.
+> 🇧🇷 Built with **Brazilian consumers** in mind, using **Anatel Resolution nº 632/2014** as a reference (minimum 80% of advertised speed). Equally useful in any jurisdiction where documented evidence is needed.
 
 ---
 
@@ -35,12 +36,26 @@
 Internet Service Providers often:
 - Deliver speeds **far below** what they advertise.
 - Apply **throttling** (artificial speed reduction) during weekends or peak hours.
-- Violate the **minimum speed rules** set by regulators (e.g., Anatel’s 80% rule).
+- Violate **minimum speed rules** (e.g., Anatel’s 80% rule).
 
 This tool provides the **objective, continuous evidence** required to:
 - **File individual lawsuits** for financial compensation.
-- **Support collective actions** (class actions) on behalf of many consumers.
+- **Support collective actions** (class actions).
 - **Complain to regulatory agencies** (Anatel, FCC, etc.).
+
+---
+
+## What’s New (v2.0)
+
+- ✅ **Fast.com now measures ping** – uses `ping3` (Python library) to estimate latency, no system `ping` required.
+- ✅ **Smart data cleaning** – per‑tool validation (Fast = download only; others require full metrics).
+- ✅ **Reliability‑based median** – statistics and financial loss are calculated only from the most stable tools (`speedtest-cli` & `LibreSpeed`).
+- ✅ **Success rate table** – shows how many tests from each tool were valid.
+- ✅ **Clearer methodology** – explains the role and limitations of each test tool.
+- ✅ **Server map includes Fast.com** – approximate location added for visual reference.
+- ✅ **Dashboard ‘Test Type’ column** – identifies if a test was “Download Only” or “Full”.
+- ✅ **Better iPerf3 resilience** – increased timeouts, fallback to ICMP ping on failure.
+- ✅ **All CSV fields now include server latitude/longitude** (where available).
 
 ---
 
@@ -49,38 +64,39 @@ This tool provides the **objective, continuous evidence** required to:
 ### 🔬 Multi‑Tool Testing
 | Tool                | Description |
 |---------------------|-------------|
-| `speedtest-cli`     | Classic Ookla Speedtest (the most widely used) |
-| `LibreSpeed`        | Open‑source alternative (via `npx`) |
-| `Fast.com`          | Netflix’s streaming‑optimised test |
-| `iPerf3`            | Professional TCP/UDP throughput test |
+| `speedtest-cli`     | Classic Ookla Speedtest (most widely used, reliable). |
+| `LibreSpeed`        | Open‑source alternative (via `npx`), reliable and geo‑aware. |
+| `Fast.com`          | Netflix’s streaming‑optimised test (download only, ping via `ping3`). |
+| `iPerf3`            | Professional TCP/UDP throughput test (unstable on public servers). |
 
 ### 📊 Data Collection & Storage
-- Continuous polling (default interval: 5 minutes).
-- Standardised CSV output (compatible with other analysis tools).
-- Public IP tracking and rich metadata (server location, distance, latency).
+- Continuous polling (default: 5‑minute interval).
+- Standardised CSV output with server geolocation.
+- Public IP tracking and rich metadata.
 
 ### 📈 Interactive Dashboard (Streamlit)
 - **Time‑series graphs** with zoom and range sliders.
-- **Boxplot comparisons** between testing tools.
-- **Throttling detection** – compares weekday vs weekend speeds.
+- **Boxplot comparisons** across testing tools.
+- **Throttling detection** – weekday vs weekend comparison.
 - **Ping vs Download** scatter plots.
-- **Server location map** (for tools that provide geolocation).
-- **Raw data table** with filtering and export.
+- **Server location map** (including Fast.com with a fixed approximate location).
+- **Raw data table** with filtering, export, and a “Test Type” column.
 - **Auto‑refresh** (1, 5, or 10 minutes).
 
 ### 📄 PDF Report Generator
 - **Court‑ready PDF** structure (cover, objective, methodology, statistics, legal framework).
 - **6+ professional graphs** (time series, distributions, boxplots, map, hourly and daily averages).
-- **Financial loss calculation** – computes how much you overpaid.
+- **Reliability‑based analysis** – median speeds are calculated using the most trusted tools.
+- **Tool‑specific success rate** and explanations about each tool’s limitations.
+- **Financial loss calculation** – computes overpayment (individual and collective).
 - **Brazilian legal references** (CDC, LGT, Anatel, and jurisprudence).
-- **Tables with median speeds** by day of week and weekend vs weekday.
 - **Dynamic filename**: `YYYYMMDD_ISP_Client_Start-End.pdf`.
 
 ### 🛡️ Health Monitoring (Optional)
 - **Systemd timer** runs a script every minute.
-- Detects if containers stop or files are not updated.
+- Detects if containers stop or CSV files are not updated.
 - **Auto‑corrects** by restarting containers.
-- **Logs** all actions to `/var/log/telecom-monitor/monitor.log`.
+- Logs everything to `/var/log/telecom-monitor/monitor.log`.
 
 ---
 
@@ -99,8 +115,8 @@ This tool provides the **objective, continuous evidence** required to:
 │  │  • Fast.com         │    │  • CSV export                    │  │
 │  │  • iPerf3           │    │  • PDF report generation         │  │
 │  └─────────┬───────────┘    └──────────────┬───────────────────┘  │
-│            │                                │                     │
-│            └────────────┬───────────────────┘                     │
+│            │                               │                      │
+│            └────────────┬──────────────────┘                      │
 │                         ▼                                         │
 │                  ┌───────────────┐                                │
 │                  │   Shared      │                                │
@@ -332,6 +348,7 @@ The PDF will appear in `data/logs/relatorio_manual.pdf`.
 | **iPerf3 tests fail** | Check the servers in `.env`. Some public iPerf servers block high‑volume tests. Try changing to `iperf-ams-nl.eranium.net`. |
 | **PDF generation fails** | Ensure the CSV file exists and is not empty. Check `docker logs telecom_dashboard` for detailed errors. |
 | **High disk usage** | Logs and CSVs accumulate. The monitor rotates logs; you can manually remove old CSVs: `rm -rf data/logs/*.csv`. |
+| **Fast.com ping is 0** | The `ping3` library requires network access to 8.8.8.8. If it times out, it returns 0. This is normal in restrictive networks. |
 
 ---
 
@@ -365,3 +382,5 @@ This project is licensed under the **MIT License**.
 The authors assume **no liability** for any outcomes resulting from the use of this software.
 
 ---
+
+

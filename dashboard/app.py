@@ -15,7 +15,7 @@ LOG_DIR = os.getenv('LOG_DIR', '/app/data/logs')
 st.title("📡 Telecom Speed Monitor Dashboard")
 
 # ------------------------------------------------------------
-# 1. BRAZILIAN TELECOM PLANS DATASET
+# 1. BRAZILIAN TELECOM PLANS DATASET (COMPLETO)
 # ------------------------------------------------------------
 PLANS = {
     "VIVO": [
@@ -143,11 +143,9 @@ selected_period = st.selectbox(
 # ------------------------------------------------------------
 # 6. APPLY FILTERS
 # ------------------------------------------------------------
-# Primeiro, filtro por ferramentas e datas (start/end)
 mask = (df['Tool'].isin(tools)) & (df['Timestamp'].dt.date >= start_date) & (df['Timestamp'].dt.date <= end_date)
 filtered_by_date = df[mask].copy()
 
-# Depois, aplica o período relativo (se não for "Completo")
 if selected_period != "Completo":
     if "horas" in selected_period:
         hours = int(selected_period.split()[1])
@@ -160,7 +158,6 @@ if selected_period != "Completo":
     if cutoff:
         filtered_by_date = filtered_by_date[filtered_by_date['Timestamp'] >= cutoff]
 
-# Converter para timezone local para exibição
 if not filtered_by_date.empty:
     filtered = filtered_by_date.copy()
     filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
@@ -219,18 +216,15 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 with tab1:
-    # Download Evolution
     fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
                    title='Download Evolution (bps)')
     fig1.update_xaxes(
         tickformat="%H:%M\n%m/%d",
         dtick=300000,
         rangeslider=dict(visible=True, thickness=0.05)
-        # Removido o rangeselector para evitar duplicação
     )
     st.plotly_chart(fig1, width='stretch')
     
-    # Upload Evolution
     fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                    title='Upload Evolution (bps)')
     fig2.update_xaxes(
@@ -268,7 +262,17 @@ with tab4:
 
 with tab5:
     st.subheader("🌍 Server Locations")
-    server_locations = filtered[filtered['Server Lat'] != 0].drop_duplicates(
+    # Adicionar Fast com coordenada fixa (aproximada)
+    fast_data = filtered[filtered['Tool'] == 'fast'].copy()
+    if not fast_data.empty:
+        fast_data['Server Lat'] = 39.8283
+        fast_data['Server Lon'] = -98.5795
+        fast_data['Server Name'] = 'Fast.com (Netflix) - Global'
+        filtered_map = pd.concat([filtered, fast_data], ignore_index=True)
+    else:
+        filtered_map = filtered
+
+    server_locations = filtered_map[filtered_map['Server Lat'] != 0].drop_duplicates(
         subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
     )
     if not server_locations.empty:
@@ -290,7 +294,13 @@ with tab5:
         st.info("No server location data available. Only speedtest-cli and librespeed provide this.")
 
 with tab6:
-    st.dataframe(filtered[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload']].head(100))
+    # Adicionar coluna de tipo de teste
+    filtered_display = filtered.copy()
+    filtered_display['Test Type'] = filtered_display.apply(
+        lambda row: 'Download Only' if row['Tool'] == 'fast' else 'Full' if row['Upload'] > 0 else 'Partial',
+        axis=1
+    )
+    st.dataframe(filtered_display[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload', 'Test Type']].head(100))
 
 # ------------------------------------------------------------
 # 10. EXPORT FOR PDF REPORT
