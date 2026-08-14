@@ -2,6 +2,7 @@
 """
 Generate a comprehensive court-ready PDF report from speed test data,
 using only speedtest-cli and LibreSpeed for analysis and graphics.
+Fixed page layout with 11 pages.
 """
 import argparse
 import os
@@ -220,8 +221,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
 
     success_data = []
     for tool in df['Tool'].unique():
-        total = len(df[df['Tool'] == tool])
-        valid = len(df[df['Tool'] == tool][df.apply(is_valid_general, axis=1)])
+        tool_df = df[df['Tool'] == tool]
+        total = len(tool_df)
+        valid = len(tool_df[tool_df.apply(is_valid_general, axis=1)])
         rate = (valid / total * 100) if total > 0 else 0
         success_data.append([tool, total, valid, f"{rate:.1f}%"])
 
@@ -303,20 +305,22 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
                                  alignment=TA_CENTER, spaceAfter=12, fontName='Helvetica-Bold')
     style_subtitle = ParagraphStyle('Subtitle', parent=styles['Heading2'], fontSize=14,
                                     alignment=TA_CENTER, spaceAfter=10, fontName='Helvetica')
-    style_heading1 = ParagraphStyle('Heading1', parent=styles['Heading1'], fontSize=16,
-                                    spaceAfter=8, fontName='Helvetica-Bold')
-    style_heading2 = ParagraphStyle('Heading2', parent=styles['Heading2'], fontSize=13,
+    style_heading1 = ParagraphStyle('Heading1', parent=styles['Heading1'], fontSize=14,
                                     spaceAfter=6, fontName='Helvetica-Bold')
-    style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10,
-                                alignment=TA_JUSTIFY, spaceAfter=6, fontName='Helvetica')
+    style_heading2 = ParagraphStyle('Heading2', parent=styles['Heading2'], fontSize=12,
+                                    spaceAfter=4, fontName='Helvetica-Bold')
+    style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=9,
+                                alignment=TA_JUSTIFY, spaceAfter=4, fontName='Helvetica')
     style_centered = ParagraphStyle('Centered', parent=styles['Normal'],
-                                    alignment=TA_CENTER, fontSize=10, fontName='Helvetica')
+                                    alignment=TA_CENTER, fontSize=9, fontName='Helvetica')
     style_left = ParagraphStyle('Left', parent=styles['Normal'],
-                                alignment=TA_LEFT, fontSize=10, fontName='Helvetica')
+                                alignment=TA_LEFT, fontSize=9, fontName='Helvetica')
 
     story = []
 
-    # Capa
+    # ------------------------------------------------------------
+    # Página 1: Capa
+    # ------------------------------------------------------------
     story.append(Spacer(1, 4*cm))
     story.append(Paragraph("RELATÓRIO TÉCNICO - JURÍDICO", style_title))
     story.append(Spacer(1, 0.5*cm))
@@ -334,34 +338,43 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"Guaxupé, {data_extenso(datetime.now())}", style_centered))
     story.append(PageBreak())
 
-    # Sumário
+    # ------------------------------------------------------------
+    # Página 2: Sumário
+    # ------------------------------------------------------------
     story.append(Paragraph("SUMÁRIO", style_heading1))
     story.append(Spacer(1, 0.5*cm))
-    for sec in [
-        "1. OBJETIVO",
-        "2. METODOLOGIA",
-        "3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO",
-        "   3.1. Desempenho por Dia da Semana",
-        "   3.2. Comparação Dias Úteis vs. Fins de Semana",
-        "   3.3. Análise de Throttling",
-        "4. VELOCIDADE CONTRATADA VERSUS ENTREGUE",
-        "   4.1. Parâmetros Contratados",
-        "   4.2. Estatísticas Gerais",
-        "   4.3. Percentuais de Entrega por Período",
-        "5. CÁLCULO DA PERDA FINANCEIRA",
-        "   5.1. Premissas",
-        "   5.2. Perda Mensal por Período",
-        "   5.3. Perda Média Mensal",
-        "   5.4. Perda Acumulada",
-        "   5.5. Estimativa para Ação Civil Pública",
-        "6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA",
-        "7. RECOMENDAÇÕES",
-        "8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS",
-        "9. RESUMO EXECUTIVO",
-    ]:
-        story.append(Paragraph(sec, style_body))
+    # Itens do sumário com números de página fixos
+    summary_items = [
+        ("1. OBJETIVO e 2. METODOLOGIA", 3),
+        ("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", 4),
+        ("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", 5),
+        ("5. CÁLCULO DA PERDA FINANCEIRA", 6),
+        ("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", 7),
+        ("7. RECOMENDAÇÕES", 8),
+        ("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", 9),
+        ("9. RESUMO EXECUTIVO", 11),
+    ]
+    for item, page_num in summary_items:
+        # Criar uma linha com ponto e página alinhada à direita
+        # Usar uma tabela simples para alinhar
+        data = [[Paragraph(item, style_body), Paragraph(str(page_num), style_body)]]
+        t = Table(data, colWidths=[12*cm, 2*cm])
+        t.setStyle(TableStyle([
+            ('ALIGN', (0,0), (0,0), 'LEFT'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
+    # ------------------------------------------------------------
+    # Página 3: 1. OBJETIVO e 2. METODOLOGIA
+    # ------------------------------------------------------------
     # 1. OBJETIVO
     story.append(Paragraph("1. OBJETIVO", style_heading1))
     objective_text = f"""
@@ -391,9 +404,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     Os dados aqui apresentados servem como subsídio técnico para notificação extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.
     """
     story.append(Paragraph(objective_text, style_body))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.3*cm))
 
-    # 2. METODOLOGIA (com descrição das ferramentas, tabela e texto)
+    # 2. METODOLOGIA
     story.append(Paragraph("2. METODOLOGIA", style_heading1))
     story.append(Paragraph(
         "Os testes foram realizados com as ferramentas speedtest-cli, LibreSpeed, Fast.com e iPerf3, "
@@ -407,9 +420,10 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     item_style = ParagraphStyle(
         'ListItem',
         parent=style_body,
-        leftIndent=20,
+        leftIndent=15,
         bulletText='- ',
         spaceAfter=2,
+        fontSize=9,
     )
     itens = [
         "speedtest-cli (Ookla): Mede download, upload e latência. É a mais confiável e amplamente utilizada.",
@@ -420,39 +434,37 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     for item in itens:
         story.append(Paragraph(item, item_style))
     
-    # Espaçamento entre a lista e a tabela
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.2*cm))
     
     # Tabela de taxa de sucesso (com todas as ferramentas)
     table_success = Table([["Ferramenta", "Total Testes", "Válidos", "Taxa de Sucesso"]] + success_data,
-                          colWidths=[4*cm, 3*cm, 3*cm, 4*cm])
+                          colWidths=[3.5*cm, 3*cm, 3*cm, 3.5*cm])
     table_success.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 9),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('FONTSIZE', (0,0), (-1,0), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
         ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
         ('FONTSIZE', (0,1), (-1,-1), 8),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
-    story.append(KeepTogether([table_success, Spacer(1, 0.3*cm)]))
+    story.append(KeepTogether([table_success, Spacer(1, 0.2*cm)]))
     
-    # Espaçamento após a tabela
-    story.append(Spacer(1, 0.3*cm))
-    
-    # Parágrafo explicativo sobre a análise estatística focada nas duas ferramentas
     story.append(Paragraph(
         "A análise estatística principal (mediana, percentuais) foi calculada utilizando exclusivamente os dados dessas duas ferramentas, "
         "por serem as mais confiáveis e amplamente utilizadas para medições de velocidade.",
         style_body
     ))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(PageBreak())
 
-    # 3. ANÁLISE ESTATÍSTICA
+    # ------------------------------------------------------------
+    # Página 4: 3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO
+    # ------------------------------------------------------------
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", style_heading1))
+    story.append(Spacer(1, 0.3*cm))
 
     # 3.1 Desempenho por dia da semana
     story.append(Paragraph("3.1. Desempenho por Dia da Semana (dias com dados disponíveis)", style_heading2))
@@ -464,7 +476,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             idx = weekdays_order.index(dia) if dia in weekdays_order else 0
             nome_dia = dias_pt[idx]
             dados_dia.append([nome_dia, f"{valor:.1f}", f"{pct:.1f}%", categoria])
-        table_dia = Table(dados_dia, colWidths=[3.5*cm, 4.5*cm, 3.5*cm, 4*cm])
+        table_dia = Table(dados_dia, colWidths=[3.5*cm, 4*cm, 3.5*cm, 3.5*cm])
         table_dia.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
@@ -474,10 +486,10 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             ('BOTTOMPADDING', (0,0), (-1,0), 6),
             ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
             ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
-            ('FONTSIZE', (0,1), (-1,-1), 9),
+            ('FONTSIZE', (0,1), (-1,-1), 8),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
-        story.append(KeepTogether([table_dia, Spacer(1, 0.3*cm)]))
+        story.append(KeepTogether([table_dia, Spacer(1, 0.2*cm)]))
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", style_body))
 
@@ -491,7 +503,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             ["Dias de semana (2ª a 6ª)", f"{wk_med:.1f}", f"{(wk_med/500)*100:.1f}%", f"{upload_weekday:.1f}", f"{(upload_weekday/250)*100:.1f}%"],
             ["Fins de semana (Sáb+Dom)", f"{we_med:.1f}", f"{(we_med/500)*100:.1f}%", f"{upload_weekend:.1f}", f"{(upload_weekend/250)*100:.1f}%"],
         ]
-        table_comp = Table(dados_comp, colWidths=[4.5*cm, 3.5*cm, 3*cm, 3.5*cm, 3*cm])
+        table_comp = Table(dados_comp, colWidths=[4*cm, 3.5*cm, 2.5*cm, 3.5*cm, 2.5*cm])
         table_comp.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
@@ -504,7 +516,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             ('FONTSIZE', (0,1), (-1,-1), 8),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
-        story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
+        story.append(KeepTogether([table_comp, Spacer(1, 0.2*cm)]))
         reducao = ((wk_med - we_med) / wk_med) * 100 if wk_med > 0 else 0
         story.append(Paragraph(
             f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia gestão de tráfego sem aviso prévio.",
@@ -512,7 +524,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         ))
     else:
         story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", style_body))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.2*cm))
 
     # 3.3 Throttling
     story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", style_heading2))
@@ -530,14 +542,16 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         possui registros suficientes para comparação. Recomenda-se a continuidade das medições para obter dados em ambos os períodos.
         """
     story.append(Paragraph(throttle_text, style_body))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(PageBreak())
 
-    # 4. VELOCIDADE CONTRATADA VS ENTREGUE
+    # ------------------------------------------------------------
+    # Página 5: 4. VELOCIDADE CONTRATADA VERSUS ENTREGUE
+    # ------------------------------------------------------------
     story.append(Paragraph("4. VELOCIDADE CONTRATADA VERSUS ENTREGUE", style_heading1))
     story.append(Paragraph("4.1. Parâmetros Contratados", style_heading2))
     story.append(Paragraph("• Download: 500 Mbps", style_body))
     story.append(Paragraph("• Upload: 250 Mbps", style_body))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.2*cm))
 
     story.append(Paragraph("4.2. Estatísticas Gerais de Download e Upload (dados consolidados das duas ferramentas)", style_heading2))
     desc_data = [["Estatística", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]]
@@ -554,14 +568,14 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 9),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('FONTSIZE', (0,0), (-1,0), 8),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
         ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
         ('FONTSIZE', (0,1), (-1,-1), 8),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
-    story.append(KeepTogether([table_desc, Spacer(1, 0.3*cm)]))
+    story.append(KeepTogether([table_desc, Spacer(1, 0.2*cm)]))
 
     overall_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
     overall_ul = combined_desc.loc['50%', 'Upload_Mbps'] if '50%' in combined_desc.index else 0
@@ -582,25 +596,28 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 9),
-            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('FONTSIZE', (0,0), (-1,0), 8),
+            ('BOTTOMPADDING', (0,0), (-1,0), 8),
             ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
             ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
             ('FONTSIZE', (0,1), (-1,-1), 8),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
-        story.append(KeepTogether([table_pct, Spacer(1, 0.5*cm)]))
+        story.append(KeepTogether([table_pct, Spacer(1, 0.2*cm)]))
     else:
         story.append(Paragraph("Não há dados para calcular os percentuais de entrega por período.", style_body))
+    story.append(PageBreak())
 
-    # 5. PERDA FINANCEIRA
+    # ------------------------------------------------------------
+    # Página 6: 5. CÁLCULO DA PERDA FINANCEIRA
+    # ------------------------------------------------------------
     story.append(Paragraph("5. CÁLCULO DA PERDA FINANCEIRA", style_heading1))
     story.append(Paragraph("5.1. Premissas", style_heading2))
     story.append(Paragraph(f"• Plano: {plan_name}", style_body))
     story.append(Paragraph(f"• Valor mensal estimado: {format_br_money(valor_mensal)}", style_body))
     story.append(Paragraph(f"• Período analisado: {meses} meses ({meses//12} anos)", style_body))
     story.append(Paragraph("• Inflação/reajustes não considerados (cálculo subestimado)", style_body))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.2*cm))
 
     story.append(Paragraph("5.2. Perda Mensal por Período (dados disponíveis)", style_heading2))
     if not combined_pct_stats.empty:
@@ -619,20 +636,20 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
                 format_br_money(val_efet),
                 format_br_money(perda)
             ])
-        table_perda = Table(perda_data, colWidths=[3.5*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
+        table_perda = Table(perda_data, colWidths=[3*cm, 2.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm])
         table_perda.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
             ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 8),
-            ('BOTTOMPADDING', (0,0), (-1,0), 12),
+            ('FONTSIZE', (0,0), (-1,0), 7),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
             ('BACKGROUND', (0,1), (-1,-1), colors.HexColor('#ecf0f1')),
             ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#7f8c8d')),
             ('FONTSIZE', (0,1), (-1,-1), 8),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
-        story.append(KeepTogether([table_perda, Spacer(1, 0.3*cm)]))
+        story.append(KeepTogether([table_perda, Spacer(1, 0.2*cm)]))
     else:
         story.append(Paragraph("Não há dados para calcular a perda por período.", style_body))
 
@@ -643,7 +660,7 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         f"Este valor é passível de restituição em dobro (CDC, art. 42, parágrafo único), "
         f"totalizando {format_br_money(perda_total_individual*2)}.", style_body
     ))
-    story.append(Spacer(1, 0.3*cm))
+    story.append(Spacer(1, 0.2*cm))
 
     story.append(Paragraph("5.4. Estimativa para Ação Civil Pública (Região de Guaxupé/MG)", style_heading2))
     story.append(Paragraph("• Número estimado de clientes Vivo Fibra na região: 4.500", style_body))
@@ -651,36 +668,38 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Paragraph(f"• Danos materiais coletivos: 4.500 × {format_br_number(perda_total_individual)} = {format_br_money(danos_materiais_coletivos)}", style_body))
     story.append(Paragraph(f"• Danos morais coletivos (R$ 5.000/cliente): 4.500 × 5.000 = {format_br_money(danos_morais_coletivos)}", style_body))
     story.append(Paragraph(f"• Total estimado da ação civil pública: {format_br_money(total_acao_coletiva)}", style_body))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(PageBreak())
 
-    # 6. LEGAL
-    bloco_legal = []
-    bloco_legal.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
-    bloco_legal.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
-    bloco_legal.append(Paragraph("• Constituição Federal, art. 5º, XXXII – defesa do consumidor.", style_body))
-    bloco_legal.append(Paragraph("• Código de Defesa do Consumidor, art. 6º, III e VIII – informação e inversão do ônus da prova.", style_body))
-    bloco_legal.append(Paragraph("• CDC, art. 14 – responsabilidade objetiva.", style_body))
-    bloco_legal.append(Paragraph("• CDC, art. 39, V – vedação de vantagem excessiva.", style_body))
-    bloco_legal.append(Paragraph("• CDC, art. 42, p.ú – devolução em dobro.", style_body))
-    bloco_legal.append(Paragraph("• Lei Geral de Telecomunicações, art. 3º – padrões de qualidade.", style_body))
-    bloco_legal.append(Paragraph("• Resolução Anatel nº 632/2014, art. 3º, §1º – velocidade média ≥ 80%.", style_body))
-    bloco_legal.append(Paragraph("• Marco Civil da Internet, art. 9º – neutralidade de rede.", style_body))
-    bloco_legal.append(Spacer(1, 0.3*cm))
-    bloco_legal.append(Paragraph("6.2. Jurisprudência Relevante", style_heading2))
-    bloco_legal.append(Paragraph(
+    # ------------------------------------------------------------
+    # Página 7: 6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA
+    # ------------------------------------------------------------
+    story.append(Paragraph("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", style_heading1))
+    story.append(Paragraph("6.1. Dispositivos Legais Aplicáveis", style_heading2))
+    story.append(Paragraph("• Constituição Federal, art. 5º, XXXII – defesa do consumidor.", style_body))
+    story.append(Paragraph("• Código de Defesa do Consumidor, art. 6º, III e VIII – informação e inversão do ônus da prova.", style_body))
+    story.append(Paragraph("• CDC, art. 14 – responsabilidade objetiva.", style_body))
+    story.append(Paragraph("• CDC, art. 39, V – vedação de vantagem excessiva.", style_body))
+    story.append(Paragraph("• CDC, art. 42, p.ú – devolução em dobro.", style_body))
+    story.append(Paragraph("• Lei Geral de Telecomunicações, art. 3º – padrões de qualidade.", style_body))
+    story.append(Paragraph("• Resolução Anatel nº 632/2014, art. 3º, §1º – velocidade média ≥ 80%.", style_body))
+    story.append(Paragraph("• Marco Civil da Internet, art. 9º – neutralidade de rede.", style_body))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph("6.2. Jurisprudência Relevante", style_heading2))
+    story.append(Paragraph(
         "• STJ, REsp 1.660.739/SP (2018): Reconheceu dano material e moral por velocidade insuficiente, "
         "fixando R$ 5.000,00 por cliente.", style_body
     ))
-    bloco_legal.append(Paragraph(
+    story.append(Paragraph(
         "• TJSP, Apelação nº 1038170-12.2019.8.26.0114: Vivo condenada por velocidade inferior.", style_body
     ))
-    bloco_legal.append(Paragraph(
+    story.append(Paragraph(
         "• MPMA vs. Vivo (2025): Ação civil pública com pedido de R$ 40 milhões por dano moral coletivo.", style_body
     ))
-    story.append(KeepTogether(bloco_legal))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(PageBreak())
 
-    # 7. RECOMENDAÇÕES
+    # ------------------------------------------------------------
+    # Página 8: 7. RECOMENDAÇÕES
+    # ------------------------------------------------------------
     story.append(Paragraph("7. RECOMENDAÇÕES", style_heading1))
     story.append(Paragraph(
         "1. <b>Notificação extrajudicial à operadora</b> – Enviar notificação formal, com prazo de 15 (quinze) dias "
@@ -713,103 +732,71 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "sobre a prática de throttling e a necessidade de fiscalização mais rigorosa, além de estimular a adesão "
         "a eventuais ações coletivas.", style_body
     ))
-    story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
     # ------------------------------------------------------------
-    # 8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS
-    # CONSOLIDADO EM 2 PÁGINAS (LANDSCAPE)
+    # Página 9 e 10: 8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS
     # ------------------------------------------------------------
     story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
-    # Carregar todas as imagens
-    img_paths = []
+    # Coletar apenas as imagens que realmente existem
+    valid_img_paths = []
     for fname in comparison_images:
         path = os.path.join(graph_dir, fname)
         if os.path.exists(path):
-            img_paths.append(path)
-        else:
-            img_paths.append(None)  # fallback
+            valid_img_paths.append(path)
 
-    # Definir largura disponível (A4 landscape: 29.7 cm - margens 1.5cm cada = 26.7 cm)
-    # Usar 2 colunas com largura ~12.5 cm e altura proporcional (8 cm)
-    img_width = 12.5 * cm
-    img_height = 8 * cm
+    if not valid_img_paths:
+        story.append(Paragraph("Nenhum gráfico disponível para exibição.", style_body))
+    else:
+        # Definir largura de cada imagem (2 colunas, com margem)
+        img_width = 12.5 * cm
+        img_height = 8 * cm
 
-    # Função para criar uma grade com até 4 imagens (2 colunas, 2 linhas)
-    def create_image_grid(image_list, start_index, max_count=4):
-        rows = []
-        count = 0
-        for i in range(max_count):
-            idx = start_index + i
-            if idx >= len(image_list):
-                break
-            path = image_list[idx]
-            if path is None:
-                continue
-            img = Image(path, width=img_width, height=img_height)
-            # Alternar colunas: se i par, coluna 0; se ímpar, coluna 1
-            if i % 2 == 0:
-                # Iniciar nova linha
-                rows.append([img, None])
-            else:
-                # Adicionar na segunda coluna da última linha
-                if rows:
-                    rows[-1][1] = img
-        # Remover linhas onde a segunda coluna é None (caso último item seja ímpar)
-        cleaned_rows = []
-        for row in rows:
-            if row[1] is None:
-                # Se for a última linha com apenas uma imagem, centralizamos? Vamos manter como está.
-                # Mas podemos substituir por Spacer para manter alinhamento? Vamos deixar como está.
-                cleaned_rows.append([row[0], Spacer(1, 0)])
-            else:
-                cleaned_rows.append(row)
-        return cleaned_rows
+        def build_table_rows(image_paths):
+            rows = []
+            for i in range(0, len(image_paths), 2):
+                row = []
+                row.append(Image(image_paths[i], width=img_width, height=img_height))
+                if i + 1 < len(image_paths):
+                    row.append(Image(image_paths[i+1], width=img_width, height=img_height))
+                else:
+                    row.append(Spacer(1, 0))
+                rows.append(row)
+            return rows
 
-    # Dividir as imagens em dois grupos: primeiras 4 e últimas 3
-    # Como temos 7 imagens, primeira página com 4, segunda com 3
-    first_group = img_paths[:4]
-    second_group = img_paths[4:]
+        # Dividir em grupos de até 4 imagens por página (2 colunas x 2 linhas)
+        page_size = 4
+        total_pages = (len(valid_img_paths) + page_size - 1) // page_size
 
-    # Primeira página
-    if first_group:
-        table_rows1 = create_image_grid(first_group, 0, 4)
-        table1 = Table(table_rows1, colWidths=[img_width, img_width])
-        table1.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
-        ]))
-        story.append(KeepTogether([table1, Spacer(1, 0.5*cm)]))
+        for page_num in range(total_pages):
+            start = page_num * page_size
+            end = min(start + page_size, len(valid_img_paths))
+            page_paths = valid_img_paths[start:end]
 
-    # Inserir quebra de página para segunda página (se houver segunda parte)
-    if second_group:
-        story.append(PageBreak())
-        story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", style_heading1))
-        story.append(Spacer(1, 0.3*cm))
-        table_rows2 = create_image_grid(second_group, 4, 3)
-        # Preencher a linha restante para ocupar altura? Podemos adicionar espaçadores verticais.
-        # Como são 3 imagens (1ª linha: 2 imagens, 2ª linha: 1 imagem), vamos centralizar a última.
-        # Ajustar para que a última linha fique centralizada com duas colunas?
-        # Vamos modificar: se a segunda página tem 3 imagens, a última fica sozinha. Podemos colocar um Spacer na segunda coluna.
-        # Já tratamos isso em create_image_grid, que coloca Spacer para coluna vazia.
-        table2 = Table(table_rows2, colWidths=[img_width, img_width])
-        table2.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
-        ]))
-        story.append(KeepTogether([table2, Spacer(1, 0.5*cm)]))
+            if page_num > 0:
+                story.append(PageBreak())
+                story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", style_heading1))
+                story.append(Spacer(1, 0.3*cm))
 
-    # Se não houver segunda página, não adicionamos PageBreak extra.
-    # Agora forçar uma quebra de página para a seção 9 (já que a seção 8 termina)
+            table_rows = build_table_rows(page_paths)
+            table = Table(table_rows, colWidths=[img_width, img_width])
+            table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
+            ]))
+            story.append(KeepTogether([table, Spacer(1, 0.5*cm)]))
+
+    # Garantir que a página 10 termine e página 11 comece com Resumo
     story.append(PageBreak())
 
-    # 9. RESUMO EXECUTIVO
+    # ------------------------------------------------------------
+    # Página 11: 9. RESUMO EXECUTIVO
+    # ------------------------------------------------------------
     story.append(Paragraph("9. RESUMO EXECUTIVO", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
