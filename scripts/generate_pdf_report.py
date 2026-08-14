@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     Image, PageBreak, KeepTogether
@@ -212,7 +212,6 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     # ------------------------------------------------------------
     # Cálculo da taxa de sucesso para TODAS as ferramentas (para a tabela)
     # ------------------------------------------------------------
-    # Função de validação específica por ferramenta
     def is_valid_general(row):
         if row['Tool'] == 'fast':
             return row['Download'] > 0
@@ -293,11 +292,11 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     comparison_images = generate_comparison_plots(df_speed, df_librespeed, graph_dir)
 
     # ------------------------------------------------------------
-    # CONSTRUIR O PDF
+    # CONSTRUIR O PDF (A4 landscape)
     # ------------------------------------------------------------
-    doc = SimpleDocTemplate(output_path, pagesize=A4,
-                            rightMargin=2*cm, leftMargin=2*cm,
-                            topMargin=2.5*cm, bottomMargin=2*cm)
+    doc = SimpleDocTemplate(output_path, pagesize=landscape(A4),
+                            rightMargin=1.5*cm, leftMargin=1.5*cm,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm)
 
     styles = getSampleStyleSheet()
     style_title = ParagraphStyle('Title', parent=styles['Title'], fontSize=20,
@@ -717,63 +716,97 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     story.append(Spacer(1, 0.3*cm))
     story.append(PageBreak())
 
+    # ------------------------------------------------------------
     # 8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS
+    # CONSOLIDADO EM 2 PÁGINAS (LANDSCAPE)
+    # ------------------------------------------------------------
     story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", style_heading1))
     story.append(Spacer(1, 0.3*cm))
 
-    def insert_comparison_grid(prefix, title):
-        story.append(Paragraph(title, style_heading2))
-        story.append(Spacer(1, 0.3*cm))
-        # Buscar os arquivos que começam com prefixo (ex: 'time_series_comparison')
-        img_paths = []
-        for fname in comparison_images:
-            if fname.startswith(prefix):
-                img_path = os.path.join(graph_dir, fname)
-                if os.path.exists(img_path):
-                    img_paths.append(img_path)
-        if not img_paths:
-            story.append(Paragraph("Nenhum gráfico disponível para esta seção.", style_body))
-            story.append(PageBreak())
-            return
-        # Organizar em grade de 2 colunas
+    # Carregar todas as imagens
+    img_paths = []
+    for fname in comparison_images:
+        path = os.path.join(graph_dir, fname)
+        if os.path.exists(path):
+            img_paths.append(path)
+        else:
+            img_paths.append(None)  # fallback
+
+    # Definir largura disponível (A4 landscape: 29.7 cm - margens 1.5cm cada = 26.7 cm)
+    # Usar 2 colunas com largura ~12.5 cm e altura proporcional (8 cm)
+    img_width = 12.5 * cm
+    img_height = 8 * cm
+
+    # Função para criar uma grade com até 4 imagens (2 colunas, 2 linhas)
+    def create_image_grid(image_list, start_index, max_count=4):
         rows = []
-        row = []
-        for i, path in enumerate(img_paths):
-            img = Image(path, width=7.5*cm, height=5*cm)
-            row.append(img)
-            if len(row) == 2:
-                rows.append(row)
-                row = []
-        if row:
-            row.append(Spacer(1, 0))
-            rows.append(row)
-        table_imgs = Table(rows, colWidths=[7.5*cm, 7.5*cm])
-        table_imgs.setStyle(TableStyle([
+        count = 0
+        for i in range(max_count):
+            idx = start_index + i
+            if idx >= len(image_list):
+                break
+            path = image_list[idx]
+            if path is None:
+                continue
+            img = Image(path, width=img_width, height=img_height)
+            # Alternar colunas: se i par, coluna 0; se ímpar, coluna 1
+            if i % 2 == 0:
+                # Iniciar nova linha
+                rows.append([img, None])
+            else:
+                # Adicionar na segunda coluna da última linha
+                if rows:
+                    rows[-1][1] = img
+        # Remover linhas onde a segunda coluna é None (caso último item seja ímpar)
+        cleaned_rows = []
+        for row in rows:
+            if row[1] is None:
+                # Se for a última linha com apenas uma imagem, centralizamos? Vamos manter como está.
+                # Mas podemos substituir por Spacer para manter alinhamento? Vamos deixar como está.
+                cleaned_rows.append([row[0], Spacer(1, 0)])
+            else:
+                cleaned_rows.append(row)
+        return cleaned_rows
+
+    # Dividir as imagens em dois grupos: primeiras 4 e últimas 3
+    # Como temos 7 imagens, primeira página com 4, segunda com 3
+    first_group = img_paths[:4]
+    second_group = img_paths[4:]
+
+    # Primeira página
+    if first_group:
+        table_rows1 = create_image_grid(first_group, 0, 4)
+        table1 = Table(table_rows1, colWidths=[img_width, img_width])
+        table1.setStyle(TableStyle([
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0.1*cm),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0.1*cm),
+            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
         ]))
-        story.append(KeepTogether([table_imgs, Spacer(1, 0.3*cm)]))
+        story.append(KeepTogether([table1, Spacer(1, 0.5*cm)]))
+
+    # Inserir quebra de página para segunda página (se houver segunda parte)
+    if second_group:
         story.append(PageBreak())
+        story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", style_heading1))
+        story.append(Spacer(1, 0.3*cm))
+        table_rows2 = create_image_grid(second_group, 4, 3)
+        # Preencher a linha restante para ocupar altura? Podemos adicionar espaçadores verticais.
+        # Como são 3 imagens (1ª linha: 2 imagens, 2ª linha: 1 imagem), vamos centralizar a última.
+        # Ajustar para que a última linha fique centralizada com duas colunas?
+        # Vamos modificar: se a segunda página tem 3 imagens, a última fica sozinha. Podemos colocar um Spacer na segunda coluna.
+        # Já tratamos isso em create_image_grid, que coloca Spacer para coluna vazia.
+        table2 = Table(table_rows2, colWidths=[img_width, img_width])
+        table2.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
+        ]))
+        story.append(KeepTogether([table2, Spacer(1, 0.5*cm)]))
 
-    # Inserir gráficos comparativos (todos exceto o de medianas)
-    insert_comparison_grid('time_series_comparison', 'Evolução Temporal (speedtest-cli vs LibreSpeed)')
-    insert_comparison_grid('distribuicao_comparison', 'Distribuição das Velocidades')
-    insert_comparison_grid('boxplot_comparison', 'Boxplot por Ferramenta')
-    insert_comparison_grid('scatter_comparison', 'Ping vs Download')
-    insert_comparison_grid('hourly_comparison', 'Média Horária')
-    insert_comparison_grid('weekday_comparison', 'Média por Dia da Semana')
-
-    # Página especial para a mediana
-    story.append(Paragraph("Mediana das Velocidades por Ferramenta", style_heading2))
-    story.append(Spacer(1, 0.3*cm))
-    median_path = os.path.join(graph_dir, 'medianas.png')
-    if os.path.exists(median_path):
-        img = Image(median_path, width=14*cm, height=8*cm)
-        story.append(KeepTogether([img, Spacer(1, 0.3*cm)]))
-    else:
-        story.append(Paragraph("Gráfico de medianas não disponível.", style_body))
+    # Se não houver segunda página, não adicionamos PageBreak extra.
+    # Agora forçar uma quebra de página para a seção 9 (já que a seção 8 termina)
     story.append(PageBreak())
 
     # 9. RESUMO EXECUTIVO
