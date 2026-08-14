@@ -378,14 +378,30 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         "Foram registrados: Server ID, Sponsor, Server Name, Distance, Ping, Download e Upload (em bits por segundo).",
         style_body
     ))
-    story.append(Paragraph(
-        "Cada ferramenta tem características específicas:\n"
-        "- speedtest-cli (Ookla): Mede download, upload e latência. É a mais confiável e amplamente utilizada.\n"
-        "- LibreSpeed (via npx): Semelhante ao speedtest-cli, código aberto. Também fornece geolocalização do servidor.\n"
-        "- Fast.com (Netflix): Mede apenas download, com servidores otimizados para streaming. Não mede upload nem latência.\n"
-        "- iPerf3: Mede throughput TCP/UDP, mas depende de servidores públicos que podem estar indisponíveis, resultando em falhas frequentes.",
-        style_body
-    ))
+    
+    # ----- ALTERAÇÃO AQUI: lista com bullets e indentação -----
+    story.append(Paragraph("Cada ferramenta tem características específicas:", style_body))
+    
+    # Estilo para itens da lista (com bullet '-' e indentação)
+    item_style = ParagraphStyle(
+        'ListItem',
+        parent=style_body,
+        leftIndent=20,
+        bulletText='- ',
+        spaceAfter=2,
+    )
+    
+    itens = [
+        "speedtest-cli (Ookla): Mede download, upload e latência. É a mais confiável e amplamente utilizada.",
+        "LibreSpeed (via npx): Semelhante ao speedtest-cli, código aberto. Também fornece geolocalização do servidor.",
+        "Fast.com (Netflix): Mede apenas download, com servidores otimizados para streaming. Não mede upload nem latência.",
+        "iPerf3: Mede throughput TCP/UDP, mas depende de servidores públicos que podem estar indisponíveis, resultando em falhas frequentes.",
+    ]
+    
+    for item in itens:
+        story.append(Paragraph(item, item_style))
+    # ---------------------------------------------------------
+
     # Tabela de taxa de sucesso
     table_success = Table([["Ferramenta", "Total Testes", "Válidos", "Taxa de Sucesso"]] + success_data,
                           colWidths=[4*cm, 3*cm, 3*cm, 4*cm])
