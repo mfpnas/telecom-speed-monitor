@@ -303,70 +303,88 @@ with tab6:
     st.dataframe(filtered_display[['Timestamp_local', 'Tool', 'Server Name', 'Ping', 'Download', 'Upload', 'Test Type']].head(100))
 
 # ------------------------------------------------------------
-# 10. EXPORT FOR PDF REPORT
+# 10. EXPORT FOR PDF REPORT (CORRIGIDO)
 # ------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 Generate PDF Report")
 
+# ----- ISP e Plan fora do formulário (atualização dinâmica) -----
+isp_list = list(PLANS.keys())
+isp_name = st.sidebar.selectbox(
+    "ISP Name",
+    isp_list,
+    index=isp_list.index(DEFAULT_ISP),
+    key="isp_name_export"
+)
+
+plans = PLANS[isp_name]
+plan_names = [p['name'] for p in plans]
+
+# Mantém o plano selecionado ao trocar de ISP (se possível)
+if 'plan_name_export' not in st.session_state:
+    st.session_state.plan_name_export = plan_names[0]
+else:
+    if st.session_state.plan_name_export not in plan_names:
+        st.session_state.plan_name_export = plan_names[0]
+
+plan_name = st.sidebar.selectbox(
+    "Plan Name",
+    plan_names,
+    index=plan_names.index(st.session_state.plan_name_export),
+    key="plan_name_export"
+)
+
+# ----- Demais campos no formulário (não dependem de ISP) -----
 with st.sidebar.form("pdf_report_form"):
     st.markdown("### Personal Information")
     client_name = st.text_input("Client Name", DEFAULT_CLIENT, key="client_name")
-    
-    isp_list = list(PLANS.keys())
-    isp_name = st.selectbox("ISP Name", isp_list, index=isp_list.index(DEFAULT_ISP), key="isp_name")
-    
-    plans = PLANS[isp_name]
-    plan_names = [p['name'] for p in plans]
-    default_plan_index = plan_names.index(DEFAULT_PLAN) if DEFAULT_PLAN in plan_names else 0
-    plan_name = st.selectbox("Plan Name", plan_names, index=default_plan_index, key="plan_name")
-    
     attorney_name = st.text_input("Attorney Name (optional)", "", key="attorney_name")
     address = st.text_area("Address (CEP, City, State)", "Guaxupé, MG, Brazil", key="address")
-    
+
     st.markdown("### Select Data Period")
     export_days = st.slider("Last N days", 1, 45, 7, key="export_days")
-    
+
     tool_options = list(df['Tool'].unique()) + ["All Tools"]
     export_tool = st.selectbox("Tool to export", tool_options, index=len(tool_options)-1, key="export_tool")
-    
+
     uploaded_file = st.file_uploader("Upload Bill (PDF, optional)", type=['pdf'], key="bill_upload")
-    
+
     submitted = st.form_submit_button("Generate PDF Report")
-    
+
     if submitted:
         with st.spinner("Generating report..."):
             threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
-            
+
             if export_tool == "All Tools":
                 export_df = df[df['Timestamp'] >= threshold].copy()
             else:
                 export_df = df[(df['Tool'] == export_tool) & (df['Timestamp'] >= threshold)].copy()
-            
+
             if export_df.empty:
                 st.error("No data for the selected period and tool.")
                 st.stop()
-            
+
             for col in ['Server ID', 'Sponsor', 'Server Name', 'Distance', 'Ping', 'Download', 'Upload', 'Share', 'IP Address']:
                 if col not in export_df.columns:
                     export_df[col] = ''
-            
+
             with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp_csv:
                 export_df.to_csv(tmp_csv.name, index=False)
                 csv_path = tmp_csv.name
-            
+
             bill_path = None
             if uploaded_file is not None:
                 with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
                     tmp_pdf.write(uploaded_file.read())
                     bill_path = tmp_pdf.name
-            
+
             start_str = export_df['Timestamp'].min().strftime('%Y%m%d')
             end_str = export_df['Timestamp'].max().strftime('%Y%m%d')
             safe_client = client_name.replace(' ', '_')
             safe_isp = isp_name.replace(' ', '_')
             filename = f"{datetime.now().strftime('%Y%m%d')}_{safe_isp}_{safe_client}_{start_str}-{end_str}.pdf"
             output_path = f"/app/data/logs/{filename}"
-            
+
             cmd = [
                 'python', '-u', '/app/scripts/generate_pdf_report.py',
                 '--csv', csv_path,
@@ -379,7 +397,7 @@ with st.sidebar.form("pdf_report_form"):
             ]
             if bill_path:
                 cmd.extend(['--bill', bill_path])
-            
+
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode == 0:
