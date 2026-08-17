@@ -1,12 +1,18 @@
 """Dashboard Streamlit para o Telecom Speed Monitor."""
 
+import sys
+import os
+
+# Adiciona o diretório pai ao sys.path para permitir imports absolutos
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import pytz
-from dashboard.data_loader import load_data          # <-- import absoluto
-from dashboard.filters import apply_time_filters      # <-- import absoluto
-from dashboard.report_generator import generate_report # <-- import absoluto
+from dashboard.data_loader import load_data
+from dashboard.filters import apply_time_filters
+from dashboard.report_generator import generate_report
 
 
 # ------------------------------------------------------------
