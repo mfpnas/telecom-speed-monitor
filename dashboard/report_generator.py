@@ -9,10 +9,6 @@ import pandas as pd
 from datetime import datetime
 import streamlit as st
 
-# Importe o dicionário PLANS do app.py (ou defina aqui)
-# Para simplificar, você pode passar as velocidades como argumento.
-# A função abaixo foi modificada para aceitar parâmetros adicionais.
-
 
 def generate_report(
     df: pd.DataFrame,
@@ -76,8 +72,10 @@ def generate_report(
     filename = f"{datetime.now().strftime('%Y%m%d')}_{safe_isp}_{safe_client}_{start_str}-{end_str}.pdf"
     output_path = os.path.join(log_dir, filename)
 
+    # --- CORREÇÃO DO CAMINHO ---
+    # Usa o script localizado na raiz do projeto (/app/generate_pdf_report.py)
     cmd = [
-        'python', '-u', '/app/scripts/generate_pdf_report.py',
+        'python', '-u', '/app/generate_pdf_report.py',   # <-- caminho corrigido
         '--csv', csv_path,
         '--client', client_name,
         '--isp', isp_name,
