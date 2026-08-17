@@ -25,7 +25,7 @@ COPY app.py /app/app.py
 
 # Define o diretório de configuração do Matplotlib para evitar erro de permissão
 ENV MPLCONFIGDIR=/tmp/matplotlib
-RUN mkdir -p /tmp/matplotlib && chown -R appuser:appuser /tmp/matplotlib
+RUN mkdir -p /tmp/matplotlib   # <-- removido o chown
 
 # Expõe a porta do Streamlit
 EXPOSE 8501
