@@ -1,3 +1,4 @@
+```markdown
 # 📡 Telecom Speed Monitor
 
 **Monitoramento contínuo de velocidade de internet, detecção de throttling e geração de relatórios jurídicos prontos para ação judicial contra provedores (em conformidade com a Anatel).**
@@ -7,58 +8,91 @@
 ## 📖 Índice
 
 1. [Visão Geral](#visão-geral)
-2. [Arquitetura](#arquitetura)
+2. [Arquitetura do Projeto](#arquitetura-do-projeto)
 3. [Funcionalidades](#funcionalidades)
 4. [Pré-requisitos](#pré-requisitos)
-5. [Instalação](#instalação)
+5. [Instalação e Execução](#instalação-e-execução)
 6. [Configuração](#configuração)
-7. [Execução](#execução)
-8. [Monitoramento e Saúde](#monitoramento-e-saúde)
-9. [Gerando Relatórios](#gerando-relatórios)
-10. [Estrutura de Diretórios](#estrutura-de-diretórios)
-11. [Como Contribuir](#como-contribuir)
-12. [Licença](#licença)
+7. [Monitoramento e Saúde](#monitoramento-e-saúde)
+8. [Gerando Relatórios](#gerando-relatórios)
+9. [Estrutura de Diretórios](#estrutura-de-diretórios)
+10. [Como Contribuir](#como-contribuir)
+11. [Licença](#licença)
 
 ---
 
 ## Visão Geral
 
-O **Telecom Speed Monitor** é uma solução completa e auto-hospedada que:
-
+O **Telecom Speed Monitor** é uma solução auto-hospedada e baseada em **Docker** que:
 - Realiza testes contínuos de velocidade usando **quatro ferramentas** (`speedtest-cli`, `LibreSpeed`, `Fast.com` e `iPerf3`).
-- Armazena os resultados em CSVs padronizados, com geolocalização dos servidores.
-- Oferece um **dashboard interativo** (Streamlit) com gráficos, detecção de throttling e exportação de dados.
-- Gera **relatórios PDF juridicamente admissíveis** que documentam a entrega insuficiente de velocidade e a prática de throttling, embasados na **Resolução Anatel nº 632/2014** (mínimo de 80% da velocidade contratada).
-
-O projeto foi desenvolvido pensando no **consumidor brasileiro**, mas pode ser adaptado para qualquer jurisdição onde seja necessário comprovar a má prestação de serviços de internet.
+- Armazena os resultados em CSVs padronizados com geolocalização.
+- Oferece um **dashboard interativo** (Streamlit) para visualização e análise de dados.
+- Gera **relatórios PDF juridicamente admissíveis**, embasados na **Resolução Anatel nº 632/2014** (mínimo de 80% da velocidade contratada), documentando a entrega insuficiente e a prática de throttling.
 
 ---
 
-## Arquitetura
+## Arquitetura do Projeto
 
+### Diagrama de Componentes e Fluxo de Dados
 
-┌──────────────────────────────────────────┐
-│              Docker Compose              │
-│                                          │
-│┌─────────────────┐ ┌────────────────────┐│
-││   Collector     │ │  Dashboard         ││
-││   (Python)      │ │  (Streamlit)       ││
-││                 │ │                    ││
-││ • speedtest-cli │ │ • Visualização     ││
-││ • LibreSpeed    │ │ • Filtros/gráficos ││
-││ • Fast.com      │ │ • Throttling       ││
-││ • iPerf3        │ │ • Relatórios PDF   ││
-│└────────┬────────┘ └─────────────┬──────┘│
-│         │                        │       │
-│         └──────────┬─────────────┘       │
-│                    ▼                     │
-│            ┌──────────────┐              │
-│            │   Volume     │              │
-│            │   ./data     │              │
-│            │   (CSVs)     │              │
-│            └──────────────┘              │
-└──────────────────────────────────────────┘
+A aplicação é dividida em dois serviços Docker orquestrados pelo `docker-compose.yml`, que compartilham um volume de dados persistente.
 
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          DOCKER HOST (Orquestração)                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  ┌──────────────────────────────────────┐    ┌───────────────────────────┐ │
+│  │      SERVICE: COLLECTOR (Python)     │    │   SERVICE: DASHBOARD      │ │
+│  │                                      │    │   (Streamlit + ReportLab) │ │
+│  │  ┌─────────────────────────────┐     │    │  ┌─────────────────────┐  │ │
+│  │  │         main.py             │     │    │  │    app.py (UI)      │  │ │
+│  │  │ (Loop infinito com schedule)│     │    │  └──────────┬──────────┘  │ │
+│  │  └─────────────┬───────────────┘     │    │             │             │ │
+│  │                │                     │    │  ┌──────────▼──────────┐  │ │
+│  │  ┌─────────────▼───────────────┐     │    │  │  data_loader.py     │  │ │
+│  │  │      clients/*.py           │     │    │  │  (Cache + Leitura)  │  │ │
+│  │  │ (speedtest, iperf, fast...) │     │    │  └──────────┬──────────┘  │ │
+│  │  └─────────────┬───────────────┘     │    │             │             │ │
+│  │                │                     │    │  ┌──────────▼──────────┐  │ │
+│  │  ┌─────────────▼───────────────┐     │    │  │  filters.py         │  │ │
+│  │  │    utils/logger.py          │     │    │  │ (Filtros temporais) │  │ │
+│  │  │  (Escrita em CSV)           │     │    │  └──────────┬──────────┘  │ │
+│  │  └─────────────┬───────────────┘     │    │             │             │ │
+│  └────────────────┼────────────────────┘     │  ┌──────────▼──────────┐  │ │
+│                   │                          │  │ report_generator.py │  │ │
+│                   │                          │  │  (Gatilho PDF)      │  │ │
+│                   ▼                          │  └──────────┬──────────┘  │ │
+│         ┌─────────────────────┐              │             │             │ │
+│         │  Volume: ./data     │              │  ┌──────────▼──────────┐  │ │
+│         │                     │              │  │ generate_pdf_report │  │ │
+│         │  ├─ logs/           │◄─────────────┘  │   (Script wrapper)  │  │ │
+│         │  │   *speed_logs.csv│                 └─────────────────────┘  │ │
+│         │  └─ relatorio.pdf   │                   │                      │ │
+│         └─────────────────────┘                   ▼                      │ │
+│                                                 ┌─────────────────────┐  │ │
+│                                                 │  report/*.py        │  │ │
+│                                                 │(PDF Builder + Stats)│  │ │
+│                                                 └─────────────────────┘  │ │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Explicação dos Componentes
+
+- **🔹 Container `collector`**:
+  - Executa um script Python (`main.py`) que roda em um loop infinito, utilizando a biblioteca `schedule` para agendar testes a cada `INTERVAL` segundos.
+  - Chama os clientes de teste (`clients/*.py`), que realizam as medições usando subprocessos (`iperf3`, `speedtest-cli`, `npx`).
+  - O resultado é padronizado e escrito no volume `/app/data/logs` através do módulo `utils/logger.py`.
+
+- **🔹 Container `dashboard`**:
+  - Executa o servidor web **Streamlit** (`app.py`).
+  - O módulo `data_loader.py` lê os arquivos CSV do volume e os carrega em memória com um cache de 5 minutos (`@st.cache_data`).
+  - O módulo `filters.py` aplica filtros de data e ferramentas para exibição.
+  - Quando o usuário solicita um relatório PDF, o `report_generator.py` cria um CSV temporário com os dados filtrados e chama o script wrapper `generate_pdf_report.py`.
+  - O wrapper executa o módulo `report/*.py`, que gera os gráficos, calcula as estatísticas e monta o PDF usando a biblioteca **ReportLab**.
+
+- **🔹 Volume `./data`**:
+  - Ponto central de persistência. Montado em ambos os containers (`/app/data`). Permite que os logs coletados estejam disponíveis para o dashboard e que o PDF gerado seja salvo no host.
 
 ---
 
@@ -84,16 +118,10 @@ O projeto foi desenvolvido pensando no **consumidor brasileiro**, mas pode ser a
 - Atualização automática (1, 5 ou 10 minutos).
 
 ### 📄 Gerador de Relatórios PDF
-- Estrutura **profissional e jurídica** (11 páginas fixas, formato A4 retrato).
-- Capa, sumário, objetivo, metodologia, análise estatística, comparação contratado vs. entregue, cálculo de perda financeira, fundamentação legal, recomendações, anexos com gráficos comparativos, resumo executivo.
-- Gráficos comparativos entre **speedtest-cli e LibreSpeed** (as ferramentas mais confiáveis).
+- Estrutura profissional e jurídica (formato A4 retrato).
+- Capa, sumário, análise estatística, comparação contratado vs. entregue, cálculo de perda financeira e fundamentação legal.
+- Gráficos comparativos entre `speedtest-cli` e `LibreSpeed`.
 - Cálculo de perdas financeiras individuais e estimativa para ação civil pública.
-- **Totalmente em português**, com formatação de moeda brasileira.
-
-### 🛡️ Monitoramento de Saúde (Opcional)
-- Script `monitor.py` que verifica containers e arquivos CSV a cada minuto (via systemd timer).
-- Reinicia containers automaticamente se pararem ou se os CSVs não forem atualizados.
-- Logs em `/var/log/telecom-monitor/monitor.log`.
 
 ---
 
@@ -107,7 +135,7 @@ O projeto foi desenvolvido pensando no **consumidor brasileiro**, mas pode ser a
 
 ---
 
-## Instalação
+## Instalação e Execução
 
 ### 1. Clone o repositório
 ```bash
@@ -120,8 +148,8 @@ cd telecom-speed-monitor
 mkdir -p data/logs
 ```
 
-### 3. (Opcional) Configure variáveis de ambiente
-Crie um arquivo `.env` na raiz com:
+### 3. Configure variáveis de ambiente
+Crie um arquivo `.env` na raiz com as configurações desejadas (opcional):
 ```env
 INTERVAL=300
 LOG_DIR=/app/data/logs
@@ -133,8 +161,32 @@ IPERF_SERVERS=iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uzt
 docker compose up -d --build
 ```
 
-### 5. Acesse o dashboard
-Abra `http://localhost:8501` no navegador.
+---
+
+### 🔧 Funcionamento do Docker (Sequência de Inicialização)
+
+Quando você executa `docker compose up -d --build`, a seguinte sequência de eventos ocorre:
+
+1. **Build das Imagens**:
+   - O Docker lê os arquivos `Dockerfile.collector` e `Dockerfile.dashboard`.
+   - **Dockerfile.collector**: Instala dependências de sistema (`iperf3`, `curl`, `npm`), instala pacotes Python (`speedtest-cli`, etc.), e copia o código-fonte do coletor.
+   - **Dockerfile.dashboard**: Instala dependências Python (`streamlit`, `reportlab`, etc.) e copia o dashboard, o módulo de relatórios e o wrapper `generate_pdf_report.py`.
+
+2. **Criação da Rede e Volumes**:
+   - O `docker-compose.yml` cria uma rede bridge chamada `telecom_net`.
+   - O volume `./data:/app/data` é montado em ambos os serviços, garantindo que os CSVs sejam compartilhados.
+   - O mapeamento de porta `8501:8501` é aplicado ao serviço `dashboard`.
+
+3. **Inicialização do Container `collector`**:
+   - O container é iniciado e executa `python -m collector.main`.
+   - O script `main.py` inicia um agendador (`schedule`) e imediatamente executa uma rodada completa de testes.
+   - A partir daí, a cada `INTERVAL` segundos, uma nova rodada de testes é executada em background, escrevendo os dados em `data/logs/*.csv`.
+
+4. **Inicialização do Container `dashboard`**:
+   - O container é iniciado e executa `streamlit run app.py`.
+   - O servidor Streamlit é exposto na porta `8501`.
+   - O `app.py` chama `data_loader.py`, que lê os CSVs do volume e os disponibiliza para a interface.
+   - A interface fica aguardando interações do usuário (filtros, geração de PDF).
 
 ---
 
@@ -149,40 +201,15 @@ Abra `http://localhost:8501` no navegador.
 | `IPERF_SERVERS` | Lista de servidores iPerf3 (separados por vírgula) | `iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz` |
 
 ### Arquivos Docker
-
-- `Dockerfile.collector` – imagem do coletor.
-- `Dockerfile.dashboard` – imagem do dashboard.
-- `docker-compose.yml` – orquestração dos serviços.
-
----
-
-## Execução
-
-### Iniciar todos os serviços
-```bash
-docker compose up -d
-```
-
-### Parar todos os serviços
-```bash
-docker compose down
-```
-
-### Visualizar logs do coletor
-```bash
-docker logs -f telecom_collector
-```
-
-### Visualizar logs do dashboard
-```bash
-docker logs -f telecom_dashboard
-```
+- `Dockerfile.collector` – imagem base do coletor (Python + ferramentas de teste).
+- `Dockerfile.dashboard` – imagem base do dashboard (Python + Streamlit + gerador PDF).
+- `docker-compose.yml` – orquestração dos serviços, redes e volumes.
 
 ---
 
 ## Monitoramento e Saúde
 
-Recomenda‑se configurar o monitor automático para garantir que o sistema esteja sempre funcionando.
+O projeto inclui um script de health check (`scripts/monitor.py`) que pode ser integrado ao **systemd** para garantir que os containers estejam sempre em execução.
 
 ### 1. Criar o serviço systemd
 
@@ -244,15 +271,16 @@ Crie `/etc/logrotate.d/telecom-monitor` com:
 
 ## Gerando Relatórios
 
-### Pelo Dashboard
+### Pelo Dashboard (Recomendado)
 1. Acesse `http://localhost:8501`.
 2. Preencha os dados pessoais, ISP, plano e período.
 3. Clique em **Generate PDF Report**.
-4. Faça o download do PDF gerado.
+4. Faça o download do PDF gerado (arquivo salvo em `data/logs/`).
 
 ### Pela Linha de Comando (manual)
+Para gerar um relatório diretamente dentro do container do dashboard:
 ```bash
-docker exec -it telecom_dashboard python /app/scripts/generate_pdf_report.py \
+docker exec -it telecom_dashboard python /app/generate_pdf_report.py \
     --csv /app/data/logs/speedtest-cli_speed_logs.csv \
     --client "Mauricio Faria Palma Nascimento" \
     --isp "VIVO" \
@@ -261,22 +289,19 @@ docker exec -it telecom_dashboard python /app/scripts/generate_pdf_report.py \
     --output /app/data/logs/relatorio_manual.pdf
 ```
 
-O PDF será salvo em `data/logs/relatorio_manual.pdf`.
-
 ---
 
 ## Estrutura de Diretórios
-
-Após a refatoração, a estrutura do projeto ficou assim:
 
 ```
 telecom-speed-monitor/
 ├── collector/                      # Coletor de dados
 │   ├── __init__.py
 │   ├── config.py
-│   ├── logger.py
-│   ├── main.py
-│   └── clients/
+│   ├── main.py                     # Ponto de entrada (loop agendado)
+│   ├── utils/
+│   │   └── logger.py               # Escrita dos CSVs
+│   └── clients/                    # Executores de testes
 │       ├── __init__.py
 │       ├── speedtest_client.py
 │       ├── librespeed_client.py
@@ -302,7 +327,7 @@ telecom-speed-monitor/
 ├── scripts/                        # Scripts auxiliares
 │   └── monitor.py                  # Health check
 │
-├── generate_pdf_report.py          # Wrapper CLI
+├── generate_pdf_report.py          # Wrapper CLI para geração de PDF
 ├── app.py                          # Wrapper para o dashboard (ponto de entrada)
 ├── docker-compose.yml
 ├── Dockerfile.collector
@@ -333,3 +358,4 @@ Este projeto está licenciado sob a **MIT License**. Consulte o arquivo `LICENSE
 ---
 
 **Desenvolvido com ❤️ para consumidores que exigem transparência de seus provedores de internet.**
+```
