@@ -1,260 +1,192 @@
 # 📡 Telecom Speed Monitor
 
-**A complete, self‑hosted solution to continuously monitor internet speed, detect throttling, and generate court‑ready PDF reports for lawsuits against ISPs (Anatel‑compliant).**
+**Monitoramento contínuo de velocidade de internet, detecção de throttling e geração de relatórios jurídicos prontos para ação judicial contra provedores (em conformidade com a Anatel).**
 
 ---
 
-## 📖 Table of Contents
+## 📖 Índice
 
-1. [Overview](#overview)
-2. [Why This Tool Exists](#why-this-tool-exists)
-3. [What’s New](#whats-new)
-4. [Features](#features)
-5. [Architecture](#architecture)
-6. [Prerequisites](#prerequisites)
-7. [Installation](#installation)
-8. [Configuration](#configuration)
-9. [Running the System](#running-the-system)
-10. [Monitoring & Health Checks](#monitoring--health-checks)
-11. [Generating Legal Reports](#generating-legal-reports)
-12. [Troubleshooting](#troubleshooting)
-13. [Contributing](#contributing)
-14. [License & Disclaimer](#license--disclaimer)
+1. [Visão Geral](#visão-geral)
+2. [Arquitetura](#arquitetura)
+3. [Funcionalidades](#funcionalidades)
+4. [Pré-requisitos](#pré-requisitos)
+5. [Instalação](#instalação)
+6. [Configuração](#configuração)
+7. [Execução](#execução)
+8. [Monitoramento e Saúde](#monitoramento-e-saúde)
+9. [Gerando Relatórios](#gerando-relatórios)
+10. [Estrutura de Diretórios](#estrutura-de-diretórios)
+11. [Como Contribuir](#como-contribuir)
+12. [Licença](#licença)
 
 ---
 
-## Overview
+## Visão Geral
 
-**Telecom Speed Monitor** continuously tests your internet connection using **four different tools** (`speedtest-cli`, `LibreSpeed`, `Fast.com`, and `iPerf3`). It stores results in a standardised CSV format, provides a **real‑time dashboard** with advanced analytics, and generates **professional, legally‑admissible PDF reports** that document underperformance and throttling by Internet Service Providers (ISPs).
+O **Telecom Speed Monitor** é uma solução completa e auto-hospedada que:
 
-> 🇧🇷 Built with **Brazilian consumers** in mind, using **Anatel Resolution nº 632/2014** as a reference (minimum 80% of advertised speed). Equally useful in any jurisdiction where documented evidence is needed.
+- Realiza testes contínuos de velocidade usando **quatro ferramentas** (`speedtest-cli`, `LibreSpeed`, `Fast.com` e `iPerf3`).
+- Armazena os resultados em CSVs padronizados, com geolocalização dos servidores.
+- Oferece um **dashboard interativo** (Streamlit) com gráficos, detecção de throttling e exportação de dados.
+- Gera **relatórios PDF juridicamente admissíveis** que documentam a entrega insuficiente de velocidade e a prática de throttling, embasados na **Resolução Anatel nº 632/2014** (mínimo de 80% da velocidade contratada).
 
----
-
-## Why This Tool Exists
-
-Internet Service Providers often:
-- Deliver speeds **far below** what they advertise.
-- Apply **throttling** (artificial speed reduction) during weekends or peak hours.
-- Violate **minimum speed rules** (e.g., Anatel’s 80% rule).
-
-This tool provides the **objective, continuous evidence** required to:
-- **File individual lawsuits** for financial compensation.
-- **Support collective actions** (class actions).
-- **Complain to regulatory agencies** (Anatel, FCC, etc.).
+O projeto foi desenvolvido pensando no **consumidor brasileiro**, mas pode ser adaptado para qualquer jurisdição onde seja necessário comprovar a má prestação de serviços de internet.
 
 ---
 
-## What’s New (v2.0)
+## Arquitetura
 
-- ✅ **Fast.com now measures ping** – uses `ping3` (Python library) to estimate latency, no system `ping` required.
-- ✅ **Smart data cleaning** – per‑tool validation (Fast = download only; others require full metrics).
-- ✅ **Reliability‑based median** – statistics and financial loss are calculated only from the most stable tools (`speedtest-cli` & `LibreSpeed`).
-- ✅ **Success rate table** – shows how many tests from each tool were valid.
-- ✅ **Clearer methodology** – explains the role and limitations of each test tool.
-- ✅ **Server map includes Fast.com** – approximate location added for visual reference.
-- ✅ **Dashboard ‘Test Type’ column** – identifies if a test was “Download Only” or “Full”.
-- ✅ **Better iPerf3 resilience** – increased timeouts, fallback to ICMP ping on failure.
-- ✅ **All CSV fields now include server latitude/longitude** (where available).
 
----
+┌──────────────────────────────────────────┐
+│              Docker Compose              │
+│                                          │
+│┌─────────────────┐ ┌────────────────────┐│
+││   Collector     │ │  Dashboard         ││
+││   (Python)      │ │  (Streamlit)       ││
+││                 │ │                    ││
+││ • speedtest-cli │ │ • Visualização     ││
+││ • LibreSpeed    │ │ • Filtros/gráficos ││
+││ • Fast.com      │ │ • Throttling       ││
+││ • iPerf3        │ │ • Relatórios PDF   ││
+│└────────┬────────┘ └─────────────┬──────┘│
+│         │                        │       │
+│         └──────────┬─────────────┘       │
+│                    ▼                     │
+│            ┌──────────────┐              │
+│            │   Volume     │              │
+│            │   ./data     │              │
+│            │   (CSVs)     │              │
+│            └──────────────┘              │
+└──────────────────────────────────────────┘
 
-## Features
-
-### 🔬 Multi‑Tool Testing
-| Tool                | Description |
-|---------------------|-------------|
-| `speedtest-cli`     | Classic Ookla Speedtest (most widely used, reliable). |
-| `LibreSpeed`        | Open‑source alternative (via `npx`), reliable and geo‑aware. |
-| `Fast.com`          | Netflix’s streaming‑optimised test (download only, ping via `ping3`). |
-| `iPerf3`            | Professional TCP/UDP throughput test (unstable on public servers). |
-
-### 📊 Data Collection & Storage
-- Continuous polling (default: 5‑minute interval).
-- Standardised CSV output with server geolocation.
-- Public IP tracking and rich metadata.
-
-### 📈 Interactive Dashboard (Streamlit)
-- **Time‑series graphs** with zoom and range sliders.
-- **Boxplot comparisons** across testing tools.
-- **Throttling detection** – weekday vs weekend comparison.
-- **Ping vs Download** scatter plots.
-- **Server location map** (including Fast.com with a fixed approximate location).
-- **Raw data table** with filtering, export, and a “Test Type” column.
-- **Auto‑refresh** (1, 5, or 10 minutes).
-
-### 📄 PDF Report Generator
-- **Court‑ready PDF** structure (cover, objective, methodology, statistics, legal framework).
-- **6+ professional graphs** (time series, distributions, boxplots, map, hourly and daily averages).
-- **Reliability‑based analysis** – median speeds are calculated using the most trusted tools.
-- **Tool‑specific success rate** and explanations about each tool’s limitations.
-- **Financial loss calculation** – computes overpayment (individual and collective).
-- **Brazilian legal references** (CDC, LGT, Anatel, and jurisprudence).
-- **Dynamic filename**: `YYYYMMDD_ISP_Client_Start-End.pdf`.
-
-### 🛡️ Health Monitoring (Optional)
-- **Systemd timer** runs a script every minute.
-- Detects if containers stop or CSV files are not updated.
-- **Auto‑corrects** by restarting containers.
-- Logs everything to `/var/log/telecom-monitor/monitor.log`.
 
 ---
 
-## Architecture
+## Funcionalidades
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                         Docker Compose                            │
-│                                                                   │
-│  ┌─────────────────────┐    ┌──────────────────────────────────┐  │
-│  │   Collector         │    │      Dashboard                   │  │
-│  │   (Python)          │    │      (Streamlit)                 │  │
-│  │                     │    │                                  │  │
-│  │  • speedtest-cli    │    │  • Time‑series graphs            │  │
-│  │  • LibreSpeed       │    │  • Throttling detection          │  │
-│  │  • Fast.com         │    │  • CSV export                    │  │
-│  │  • iPerf3           │    │  • PDF report generation         │  │
-│  └─────────┬───────────┘    └──────────────┬───────────────────┘  │
-│            │                               │                      │
-│            └────────────┬──────────────────┘                      │
-│                         ▼                                         │
-│                  ┌───────────────┐                                │
-│                  │   Shared      │                                │
-│                  │   Volume      │                                │
-│                  │   (./data)    │                                │
-│                  │   (CSV logs)  │                                │
-│                  └───────────────┘                                │
-└───────────────────────────────────────────────────────────────────┘
-```
+### 🔬 Testes Multi‑Ferramenta
+- **speedtest-cli** (Ookla) – confiável e amplamente usado.
+- **LibreSpeed** – código aberto, geo‑aware.
+- **Fast.com** (Netflix) – otimizado para streaming (apenas download, com ping via `ping3`).
+- **iPerf3** – teste profissional de throughput (TCP/UDP).
 
----
+### 📊 Coleta e Armazenamento
+- Execução contínua a cada 5 minutos (configurável).
+- Padronização de campos e geolocalização dos servidores.
+- Logs em CSV com metadados (IP público, servidor, distância, latência).
 
-## Prerequisites
+### 📈 Dashboard (Streamlit)
+- Séries temporais com zoom e slider.
+- Boxplots comparativos entre ferramentas.
+- Detecção de throttling (comparativo dias úteis vs. fins de semana).
+- Mapa de servidores utilizados.
+- Tabela com dados brutos e coluna "Tipo de Teste".
+- Atualização automática (1, 5 ou 10 minutos).
 
-| Requirement | Minimum |
-|-------------|---------|
-| **Linux** (or WSL2 on Windows) | Ubuntu 20.04+ / Debian 11+ |
-| **Docker** | 24.0+ |
-| **Docker Compose** | 2.20+ |
-| **Memory** | 512 MB (recommended: 1 GB) |
-| **Disk** | 2 GB (logs grow over time) |
-| **Internet** | Active connection for testing |
+### 📄 Gerador de Relatórios PDF
+- Estrutura **profissional e jurídica** (11 páginas fixas, formato A4 retrato).
+- Capa, sumário, objetivo, metodologia, análise estatística, comparação contratado vs. entregue, cálculo de perda financeira, fundamentação legal, recomendações, anexos com gráficos comparativos, resumo executivo.
+- Gráficos comparativos entre **speedtest-cli e LibreSpeed** (as ferramentas mais confiáveis).
+- Cálculo de perdas financeiras individuais e estimativa para ação civil pública.
+- **Totalmente em português**, com formatação de moeda brasileira.
+
+### 🛡️ Monitoramento de Saúde (Opcional)
+- Script `monitor.py` que verifica containers e arquivos CSV a cada minuto (via systemd timer).
+- Reinicia containers automaticamente se pararem ou se os CSVs não forem atualizados.
+- Logs em `/var/log/telecom-monitor/monitor.log`.
 
 ---
 
-## Installation
+## Pré-requisitos
 
-### 1. Clone the Repository
+- **Linux** (Ubuntu/Debian recomendado) ou WSL2 no Windows.
+- **Docker** (24.0+) e **Docker Compose** (2.20+).
+- **Memória**: 1 GB RAM (512 MB mínimo).
+- **Armazenamento**: 2 GB (para logs e CSVs).
+- **Conexão com a internet** (para os testes).
 
+---
+
+## Instalação
+
+### 1. Clone o repositório
 ```bash
-git clone https://github.com/yourusername/telecom-speed-monitor.git
+git clone https://github.com/mfpnas/telecom-speed-monitor.git
 cd telecom-speed-monitor
 ```
 
-### 2. Create the `data/logs` Directory
-
+### 2. Crie a estrutura de diretórios
 ```bash
 mkdir -p data/logs
 ```
 
-### 3. (Optional) Adjust Environment Variables
-
-Copy the sample environment file and edit it:
-
-```bash
-cp .env.example .env
-nano .env
+### 3. (Opcional) Configure variáveis de ambiente
+Crie um arquivo `.env` na raiz com:
+```env
+INTERVAL=300
+LOG_DIR=/app/data/logs
+IPERF_SERVERS=iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz
 ```
 
-Common settings:
-- `INTERVAL`: seconds between test rounds (default: 300).
-- `IPERF_SERVERS`: comma‑separated list of iPerf3 servers.
-
-### 4. Build and Start the Containers
-
+### 4. Construa e inicie os containers
 ```bash
 docker compose up -d --build
 ```
 
-This will:
-- Build the `collector` and `dashboard` images.
-- Start both containers.
-- Mount the `./data` folder inside the containers at `/app/data`.
+### 5. Acesse o dashboard
+Abra `http://localhost:8501` no navegador.
 
 ---
 
-## Configuration
+## Configuração
 
-### Environment Variables (`./.env`)
+### Variáveis de Ambiente (`.env`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `INTERVAL` | Time between test rounds (seconds) | `300` |
-| `LOG_DIR` | Where CSV logs are stored (inside container) | `/app/data/logs` |
-| `IPERF_SERVERS` | Comma‑separated list of iPerf3 servers | `iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz` |
+| Variável | Descrição | Padrão |
+|----------|-----------|--------|
+| `INTERVAL` | Intervalo entre rodadas de teste (segundos) | `300` |
+| `LOG_DIR` | Diretório de logs (dentro do container) | `/app/data/logs` |
+| `IPERF_SERVERS` | Lista de servidores iPerf3 (separados por vírgula) | `iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz` |
 
-### Docker Compose (`docker-compose.yml`)
+### Arquivos Docker
 
-- The `collector` service runs the speed tests.
-- The `dashboard` service serves the Streamlit app on port `8501`.
-- Both share the `./data` volume.
-- The `restart: unless‑stopped` policy ensures they restart after a host reboot.
+- `Dockerfile.collector` – imagem do coletor.
+- `Dockerfile.dashboard` – imagem do dashboard.
+- `docker-compose.yml` – orquestração dos serviços.
 
 ---
 
-## Running the System
+## Execução
 
-### Start All Services
-
+### Iniciar todos os serviços
 ```bash
 docker compose up -d
 ```
 
-### Check Container Status
-
-```bash
-docker ps
-```
-
-### View Collector Logs
-
-```bash
-docker logs -f telecom_collector
-```
-
-### Access the Dashboard
-
-Open your browser and go to:
-
-```
-http://localhost:8501
-```
-
-### Stop the System
-
+### Parar todos os serviços
 ```bash
 docker compose down
 ```
 
+### Visualizar logs do coletor
+```bash
+docker logs -f telecom_collector
+```
+
+### Visualizar logs do dashboard
+```bash
+docker logs -f telecom_dashboard
+```
+
 ---
 
-## Monitoring & Health Checks
+## Monitoramento e Saúde
 
-For long‑term (e.g., 45‑day) operations, we strongly recommend enabling the built‑in health monitor.
+Recomenda‑se configurar o monitor automático para garantir que o sistema esteja sempre funcionando.
 
-### 1. Create the Monitoring Script
+### 1. Criar o serviço systemd
 
-The script `monitor.py` is already in the repository. It:
-- Checks every minute if the containers are running.
-- If a container is down, it restarts it.
-- Checks if CSV files are being updated (10‑minute timeout).
-- Logs everything to `/var/log/telecom-monitor/monitor.log`.
-
-### 2. Set Up Systemd Timer (Recommended)
-
-Create the service and timer files:
-
-#### `/etc/systemd/system/telecom-monitor.service`
+**Arquivo:** `/etc/systemd/system/telecom-monitor.service`
 ```ini
 [Unit]
 Description=Telecom Monitor Service
@@ -263,15 +195,15 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-User=aurion
-Group=aurion
-WorkingDirectory=/home/aurion/Scripts/telecom_monitor
-ExecStart=/usr/bin/python3 /home/aurion/Scripts/telecom_monitor/monitor.py
+User=seu-usuario
+Group=seu-usuario
+WorkingDirectory=/home/seu-usuario/telecom-speed-monitor
+ExecStart=/usr/bin/python3 /home/seu-usuario/telecom-speed-monitor/scripts/monitor.py
 StandardOutput=append:/var/log/telecom-monitor/monitor.log
 StandardError=append:/var/log/telecom-monitor/monitor.log
 ```
 
-#### `/etc/systemd/system/telecom-monitor.timer`
+**Arquivo:** `/etc/systemd/system/telecom-monitor.timer`
 ```ini
 [Unit]
 Description=Run telecom monitor every minute
@@ -284,17 +216,15 @@ OnUnitActiveSec=1min
 WantedBy=timers.target
 ```
 
-Enable and start the timer:
+### 2. Habilitar e iniciar
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable telecom-monitor.timer
 sudo systemctl start telecom-monitor.timer
 ```
 
-### 3. Log Rotation
-
-Create `/etc/logrotate.d/telecom-monitor` to rotate the monitor logs:
-
+### 3. Rotação de logs
+Crie `/etc/logrotate.d/telecom-monitor` com:
 ```
 /var/log/telecom-monitor/monitor.log {
     daily
@@ -302,7 +232,7 @@ Create `/etc/logrotate.d/telecom-monitor` to rotate the monitor logs:
     compress
     missingok
     notifempty
-    create 644 aurion aurion
+    create 644 usuario usuario
     sharedscripts
     postrotate
         systemctl kill -s USR1 telecom-monitor.service 2>/dev/null || true
@@ -312,75 +242,94 @@ Create `/etc/logrotate.d/telecom-monitor` to rotate the monitor logs:
 
 ---
 
-## Generating Legal Reports
+## Gerando Relatórios
 
-### Via the Dashboard (Recommended)
+### Pelo Dashboard
+1. Acesse `http://localhost:8501`.
+2. Preencha os dados pessoais, ISP, plano e período.
+3. Clique em **Generate PDF Report**.
+4. Faça o download do PDF gerado.
 
-1. Open `http://localhost:8501`.
-2. Select the desired **time period** and **tools**.
-3. Fill in your personal information (Client, ISP, Plan, Address).
-4. Click **Generate PDF Report**.
-5. Download the PDF.
-
-### Via Command Line (Manual)
-
+### Pela Linha de Comando (manual)
 ```bash
 docker exec -it telecom_dashboard python /app/scripts/generate_pdf_report.py \
     --csv /app/data/logs/speedtest-cli_speed_logs.csv \
     --client "Mauricio Faria Palma Nascimento" \
     --isp "VIVO" \
     --plan "VIVO TOTAL – PRO (500/250 Mbps)" \
-    --address "Guaxupé, MG, Brazil" \
+    --address "Guaxupé, MG, Brasil" \
     --output /app/data/logs/relatorio_manual.pdf
 ```
 
-The PDF will appear in `data/logs/relatorio_manual.pdf`.
+O PDF será salvo em `data/logs/relatorio_manual.pdf`.
 
 ---
 
-## Troubleshooting
+## Estrutura de Diretórios
 
-| Issue | Solution |
-|-------|----------|
-| **Permission denied for Docker** | Add your user to the `docker` group: `sudo usermod -aG docker $USER` and log out/in. |
-| **Dashboard shows no data** | Check that the collector is running and has written CSV files. Wait 5 minutes for the first test. |
-| **librespeed returns huge numbers** | Uncheck `librespeed` in the dashboard filter. This tool sometimes selects servers that return inconsistent data. The other three tools are usually more reliable. |
-| **iPerf3 tests fail** | Check the servers in `.env`. Some public iPerf servers block high‑volume tests. Try changing to `iperf-ams-nl.eranium.net`. |
-| **PDF generation fails** | Ensure the CSV file exists and is not empty. Check `docker logs telecom_dashboard` for detailed errors. |
-| **High disk usage** | Logs and CSVs accumulate. The monitor rotates logs; you can manually remove old CSVs: `rm -rf data/logs/*.csv`. |
-| **Fast.com ping is 0** | The `ping3` library requires network access to 8.8.8.8. If it times out, it returns 0. This is normal in restrictive networks. |
+Após a refatoração, a estrutura do projeto ficou assim:
+
+```
+telecom-speed-monitor/
+├── collector/                      # Coletor de dados
+│   ├── __init__.py
+│   ├── config.py
+│   ├── logger.py
+│   ├── main.py
+│   └── clients/
+│       ├── __init__.py
+│       ├── speedtest_client.py
+│       ├── librespeed_client.py
+│       ├── fast_client.py
+│       └── iperf_client.py
+│
+├── dashboard/                      # Dashboard Streamlit
+│   ├── __init__.py
+│   ├── app.py                      # Interface principal
+│   ├── data_loader.py              # Carregamento de dados
+│   ├── filters.py                  # Filtros
+│   └── report_generator.py         # Interface para gerar PDF
+│
+├── report/                         # Geração de relatórios PDF
+│   ├── __init__.py
+│   ├── generate_pdf.py             # Função principal
+│   ├── pdf_builder.py              # Construção do documento
+│   ├── sections.py                 # Criação de cada seção
+│   ├── plots.py                    # Gráficos comparativos
+│   ├── stats.py                    # Cálculos estatísticos
+│   └── formatters.py               # Formatação BR
+│
+├── scripts/                        # Scripts auxiliares
+│   └── monitor.py                  # Health check
+│
+├── generate_pdf_report.py          # Wrapper CLI
+├── app.py                          # Wrapper para o dashboard (ponto de entrada)
+├── docker-compose.yml
+├── Dockerfile.collector
+├── Dockerfile.dashboard
+├── requirements.txt
+├── .env.example
+└── README.md
+```
 
 ---
 
-## Contributing
+## Como Contribuir
 
-We welcome contributions! Please follow these steps:
-
-1. **Fork** the repository.
-2. **Create a feature branch** (`git checkout -b feature/amazing-feature`).
-3. **Commit your changes** (`git commit -m 'Add amazing feature'`).
-4. **Push to the branch** (`git push origin feature/amazing-feature`).
-5. **Open a Pull Request**.
-
-Ideas for improvement:
-- Add more speed test tools (e.g., `speedtest‑py`, `ookla‑speedtest`).
-- Integrate with Grafana/Prometheus.
-- Add email alerts for speed drops.
-- Support multiple users (multi‑tenant).
+1. **Fork** o repositório.
+2. Crie uma branch para sua feature: `git checkout -b feature/minha-feature`.
+3. Commit suas alterações: `git commit -m 'Adiciona nova feature'`.
+4. Push para a branch: `git push origin feature/minha-feature`.
+5. Abra um **Pull Request** descrevendo suas alterações.
 
 ---
 
-## License & Disclaimer
+## Licença
 
-This project is licensed under the **MIT License**.
+Este projeto está licenciado sob a **MIT License**. Consulte o arquivo `LICENSE` para mais detalhes.
 
-**Disclaimer**: This tool is provided **for educational and informational purposes only**. Users should:
-- Verify the accuracy of the data.
-- Consult with legal professionals before taking any legal action.
-- Comply with local laws regarding data collection.
-
-The authors assume **no liability** for any outcomes resulting from the use of this software.
+**Disclaimer**: A ferramenta é fornecida apenas para fins educacionais e informativos. O usuário é responsável por verificar a precisão dos dados e consultar profissionais jurídicos antes de tomar qualquer ação legal. Os autores não se responsabilizam por quaisquer consequências do uso deste software.
 
 ---
 
-
+**Desenvolvido com ❤️ para consumidores que exigem transparência de seus provedores de internet.**
