@@ -1,4 +1,3 @@
-```markdown
 # 📡 Telecom Speed Monitor
 
 **Monitoramento contínuo de velocidade de internet, detecção de throttling e geração de relatórios jurídicos prontos para ação judicial contra provedores (em conformidade com a Anatel).**
@@ -358,4 +357,3 @@ Este projeto está licenciado sob a **MIT License**. Consulte o arquivo `LICENSE
 ---
 
 **Desenvolvido com ❤️ para consumidores que exigem transparência de seus provedores de internet.**
-```
