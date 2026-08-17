@@ -1,7 +1,7 @@
 # report/sections.py
 """Construção de cada seção do relatório PDF."""
 
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, Image  # <-- Image adicionado
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, Image
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
@@ -474,8 +474,15 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
             valid_img_paths.append(path)
 
     if valid_img_paths:
-        img_width = 12 * cm
-        img_height = 7 * cm
+        # Configuração da página: margens 2cm, largura útil ~ 17cm
+        page_width = 17 * cm
+        gap = 0.5 * cm
+        # 2 colunas
+        img_width = (page_width - gap) / 2
+        # Definir altura proporcional (assumindo proporção 4:3 ou 16:9, usamos 4:3 como padrão)
+        # Podemos calcular a altura real da imagem para manter a proporção, mas usaremos uma altura fixa
+        # para garantir que todas as imagens tenham o mesmo tamanho.
+        img_height = 6.5 * cm  # altura razoável para caber 2 linhas na página
 
         def build_table_rows(paths):
             rows = []
@@ -489,33 +496,27 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
                 rows.append(row)
             return rows
 
-        first_page_paths = valid_img_paths[:4]
-        table_rows1 = build_table_rows(first_page_paths)
-        table1 = Table(table_rows1, colWidths=[img_width, img_width])
-        table1.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
-        ]))
-        story.append(KeepTogether([table1, Spacer(1, 0.3*cm)]))
-
-        if len(valid_img_paths) > 4:
-            story.append(PageBreak())
-            story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", styles['heading1']))
-            story.append(Spacer(1, 0.3*cm))
-            second_page_paths = valid_img_paths[4:]
-            table_rows2 = build_table_rows(second_page_paths)
-            table2 = Table(table_rows2, colWidths=[img_width, img_width])
-            table2.setStyle(TableStyle([
+        # Dividir em páginas com no máximo 4 imagens por página (2x2)
+        page_size = 4
+        for page_start in range(0, len(valid_img_paths), page_size):
+            page_paths = valid_img_paths[page_start:page_start+page_size]
+            if page_start > 0:
+                story.append(PageBreak())
+                story.append(Paragraph(
+                    "8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)",
+                    styles['heading1']
+                ))
+                story.append(Spacer(1, 0.3*cm))
+            table_rows = build_table_rows(page_paths)
+            table = Table(table_rows, colWidths=[img_width, img_width])
+            table.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-                ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
             ]))
-            story.append(KeepTogether([table2, Spacer(1, 0.3*cm)]))
+            story.append(KeepTogether([table, Spacer(1, 0.3*cm)]))
     else:
         story.append(Paragraph("Nenhum gráfico disponível para exibição.", styles['body']))
 

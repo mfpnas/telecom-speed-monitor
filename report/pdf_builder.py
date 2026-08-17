@@ -1,7 +1,7 @@
 # report/pdf_builder.py
 """Orquestração da construção do documento PDF."""
 
-import os   # <-- adicionado
+import os
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -42,7 +42,7 @@ def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
               isp_name: str, attorney_name: str, address: str, bill_path: str = None,
               success_data: list = None, comparison_images: list = None, graph_dir: str = None):
     """Constrói o documento PDF completo."""
-    doc = SimpleDocTemplate(output_path, pagesize=A4,   # <-- alterado para retrato
+    doc = SimpleDocTemplate(output_path, pagesize=A4,
                             rightMargin=2*cm, leftMargin=2*cm,
                             topMargin=2.5*cm, bottomMargin=2*cm)
 
@@ -84,17 +84,10 @@ def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
     # Anexos
     story.extend(build_appendix(styles, comparison_images, graph_dir))
 
-    # Resumo executivo
+    # Resumo executivo (já contém as assinaturas)
     story.extend(build_executive_summary(styles, stats, address))
 
-    # Assinaturas e fatura
-    story.append(Spacer(1, 1.5*cm))
-    story.append(Paragraph("_________________________________________", styles['body']))
-    story.append(Paragraph("Responsável Técnico", styles['body']))
-    story.append(Spacer(1, 0.5*cm))
-    story.append(Paragraph("_________________________________________", styles['body']))
-    story.append(Paragraph("Advogado", styles['body']))
-    story.append(Spacer(1, 1*cm))
+    # Fatura anexada (opcional)
     if bill_path and os.path.exists(bill_path):
         story.append(Spacer(1, 1*cm))
         story.append(Paragraph("Fatura anexada (PDF)", styles['centered']))
