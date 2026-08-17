@@ -17,12 +17,15 @@ COPY dashboard/ /app/dashboard/
 COPY report/ /app/report/
 COPY scripts/ /app/scripts/
 
-# --- LINHA CORRIGIDA ABAIXO (busca dentro de scripts/) ---
+# Copia o wrapper do gerador de PDF (agora dentro de scripts/)
 COPY scripts/generate_pdf_report.py /app/generate_pdf_report.py
-# --------------------------------------------------------
 
 # Copia o wrapper principal do streamlit
 COPY app.py /app/app.py
+
+# Define o diretório de configuração do Matplotlib para evitar erro de permissão
+ENV MPLCONFIGDIR=/tmp/matplotlib
+RUN mkdir -p /tmp/matplotlib && chown -R appuser:appuser /tmp/matplotlib
 
 # Expõe a porta do Streamlit
 EXPOSE 8501
