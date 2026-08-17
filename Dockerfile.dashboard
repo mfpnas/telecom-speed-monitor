@@ -17,9 +17,9 @@ COPY dashboard/ /app/dashboard/
 COPY report/ /app/report/
 COPY scripts/ /app/scripts/
 
-# --- LINHA IMPORTANTE ADICIONADA ABAIXO ---
-COPY generate_pdf_report.py /app/generate_pdf_report.py
-# ------------------------------------------
+# --- LINHA CORRIGIDA ABAIXO (busca dentro de scripts/) ---
+COPY scripts/generate_pdf_report.py /app/generate_pdf_report.py
+# --------------------------------------------------------
 
 # Copia o wrapper principal do streamlit
 COPY app.py /app/app.py
