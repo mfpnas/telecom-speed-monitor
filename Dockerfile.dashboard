@@ -23,9 +23,9 @@ COPY scripts/generate_pdf_report.py /app/generate_pdf_report.py
 # Copia o wrapper principal do streamlit
 COPY app.py /app/app.py
 
-# Define o diretório de configuração do Matplotlib para evitar erro de permissão
+# Define o diretório de configuração do Matplotlib e concede permissão total
 ENV MPLCONFIGDIR=/tmp/matplotlib
-RUN mkdir -p /tmp/matplotlib   # <-- removido o chown
+RUN mkdir -p /tmp/matplotlib && chmod 777 /tmp/matplotlib   # <-- permissão total para escrita
 
 # Expõe a porta do Streamlit
 EXPOSE 8501

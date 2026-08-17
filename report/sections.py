@@ -1,7 +1,7 @@
 # report/sections.py
 """Construção de cada seção do relatório PDF."""
 
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether, Image  # <-- Image adicionado
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
