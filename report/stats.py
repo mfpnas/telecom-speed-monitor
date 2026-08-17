@@ -1,3 +1,4 @@
+# report/stats.py
 """Cálculos estatísticos e processamento de dados para o relatório."""
 
 import pandas as pd
@@ -93,7 +94,7 @@ def compute_statistics(clean_df: pd.DataFrame, plan_download: float = 500,
         we_med = weekend_stats[True]
         if wk_med > 0:
             diff = ((wk_med - we_med) / wk_med) * 100
-            if diff > 5:
+            if diff > 10:  # <-- ajustado para 10%
                 throttling['detected'] = True
                 throttling['percent'] = diff
 
@@ -101,8 +102,8 @@ def compute_statistics(clean_df: pd.DataFrame, plan_download: float = 500,
     overall_median_dl = combined_desc.loc['50%', 'Download_Mbps'] if '50%' in combined_desc.index else 0
     overall_median_ul = combined_desc.loc['50%', 'Upload_Mbps'] if '50%' in combined_desc.index else 0
 
-    # Interrupções
-    interruptions = len(clean_df[clean_df['Download'] == 0]) + len(clean_df[clean_df['Upload'] == 0])
+    # Interrupções (corrigido para evitar dupla contagem)
+    interruptions = ((clean_df['Download'] == 0) | (clean_df['Upload'] == 0)).sum()
 
     return {
         'combined_desc': combined_desc,

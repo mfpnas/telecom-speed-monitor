@@ -1,5 +1,7 @@
+# report/pdf_builder.py
 """Orquestração da construção do documento PDF."""
 
+import os   # <-- adicionado
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -40,7 +42,7 @@ def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
               isp_name: str, attorney_name: str, address: str, bill_path: str = None,
               success_data: list = None, comparison_images: list = None, graph_dir: str = None):
     """Constrói o documento PDF completo."""
-    doc = SimpleDocTemplate(output_path, pagesize=A4,
+    doc = SimpleDocTemplate(output_path, pagesize=A4,   # <-- alterado para retrato
                             rightMargin=2*cm, leftMargin=2*cm,
                             topMargin=2.5*cm, bottomMargin=2*cm)
 

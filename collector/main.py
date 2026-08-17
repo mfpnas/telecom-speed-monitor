@@ -1,7 +1,8 @@
+# collector/main.py
 import time
 import schedule
 from collector.config import INTERVAL, LOG_DIR
-from collector.utils.logger import write_result
+from collector.utils.logger import write_result   # <-- import corrigido
 from collector.clients import speedtest_client, librespeed_client, fast_client, iperf_client
 from datetime import datetime
 

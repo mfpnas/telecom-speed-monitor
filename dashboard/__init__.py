@@ -1,1 +1,1 @@
-"""Pacote do dashboard Streamlit."""
+# Pacote dashboard do Telecom Speed Monitor

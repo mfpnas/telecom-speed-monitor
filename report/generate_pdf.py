@@ -1,3 +1,4 @@
+# report/generate_pdf.py
 """Função principal de geração de relatório."""
 
 import pandas as pd
@@ -8,9 +9,12 @@ from .pdf_builder import build_pdf
 from .formatters import data_extenso
 
 
-def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
-                                   attorney_name="", address="", bill_path=None,
-                                   output_path="report.pdf", valor_mensal=172.00, meses=48):
+def generate_report_from_dataframe(
+    df_orig, client_name, isp_name, plan_name,
+    attorney_name="", address="", bill_path=None,
+    output_path="report.pdf", valor_mensal=172.00, meses=48,
+    plan_download=500, plan_upload=250, num_clientes=4500
+):
     """Gera um relatório PDF a partir de um DataFrame de dados de teste.
 
     Args:
@@ -24,6 +28,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
         output_path: Caminho de saída do PDF.
         valor_mensal: Valor mensal do plano.
         meses: Número de meses analisados.
+        plan_download: Velocidade de download contratada (Mbps).
+        plan_upload: Velocidade de upload contratada (Mbps).
+        num_clientes: Número estimado de clientes para cálculo coletivo.
 
     Returns:
         Caminho do arquivo PDF gerado.
@@ -50,16 +57,16 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
 
     success_data = compute_success_rates(df)
 
-    stats = compute_statistics(clean)
+    stats = compute_statistics(clean, plan_download, plan_upload)
     stats['clean_df'] = clean  # adiciona o DataFrame para uso nas seções
 
     # Cálculo de perdas
     overall_median_dl = stats['overall_median_dl']
-    pct_global = (overall_median_dl / 500) * 100 if overall_median_dl > 0 else 0
+    pct_global = (overall_median_dl / plan_download) * 100 if overall_median_dl > 0 else 0
     perda_mensal = valor_mensal * (1 - pct_global/100)
     perda_total_individual = perda_mensal * meses
-    danos_materiais_coletivos = perda_total_individual * 4500
-    danos_morais_coletivos = 5000 * 4500
+    danos_materiais_coletivos = perda_total_individual * num_clientes
+    danos_morais_coletivos = 5000 * num_clientes
     total_acao_coletiva = danos_materiais_coletivos + danos_morais_coletivos
 
     stats['perda_mensal'] = perda_mensal
@@ -69,6 +76,9 @@ def generate_report_from_dataframe(df_orig, client_name, isp_name, plan_name,
     stats['valor_mensal'] = valor_mensal
     stats['meses'] = meses
     stats['plan_name'] = plan_name
+    stats['plan_download'] = plan_download
+    stats['plan_upload'] = plan_upload
+    stats['num_clientes'] = num_clientes
 
     # Gerar gráficos
     graph_dir = tempfile.mkdtemp()

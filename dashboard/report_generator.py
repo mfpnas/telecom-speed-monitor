@@ -1,3 +1,4 @@
+# dashboard/report_generator.py
 """Interface para geração de relatório a partir do dashboard."""
 
 import subprocess
@@ -8,27 +9,37 @@ import pandas as pd
 from datetime import datetime
 import streamlit as st
 
+# Importe o dicionário PLANS do app.py (ou defina aqui)
+# Para simplificar, você pode passar as velocidades como argumento.
+# A função abaixo foi modificada para aceitar parâmetros adicionais.
 
-def generate_report(df: pd.DataFrame, client_name: str, isp_name: str,
-                    plan_name: str, attorney_name: str, address: str,
-                    export_days: int, export_tool: str, uploaded_file,
-                    log_dir: str = "/app/data/logs") -> str:
-    """Gera o relatório PDF via subprocess e retorna o link de download.
+
+def generate_report(
+    df: pd.DataFrame,
+    client_name: str,
+    isp_name: str,
+    plan_name: str,
+    attorney_name: str,
+    address: str,
+    export_days: int,
+    export_tool: str,
+    uploaded_file,
+    log_dir: str = "/app/data/logs",
+    plan_download: float = 500,
+    plan_upload: float = 250,
+    valor_mensal: float = 172.00,
+    meses: int = 48,
+    num_clientes: int = 4500
+) -> str:
+    """
+    Gera o relatório PDF via subprocess e retorna o link de download.
 
     Args:
-        df: DataFrame com todos os dados.
-        client_name: Nome do cliente.
-        isp_name: Operadora.
-        plan_name: Plano.
-        attorney_name: Advogado.
-        address: Endereço.
-        export_days: Número de dias para exportar.
-        export_tool: Ferramenta a exportar ('All Tools' ou nome específico).
-        uploaded_file: Arquivo de fatura (BytesIO).
-        log_dir: Diretório onde salvar o PDF.
+        ... (outros parâmetros existentes)
+        plan_download, plan_upload, valor_mensal, meses, num_clientes: novos parâmetros.
 
     Returns:
-        String HTML com o link de download do PDF.
+        String HTML com o link de download do PDF, ou string vazia em caso de erro.
     """
     threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
 
@@ -42,8 +53,9 @@ def generate_report(df: pd.DataFrame, client_name: str, isp_name: str,
         return ""
 
     # Garantir colunas necessárias
-    for col in ['Server ID', 'Sponsor', 'Server Name', 'Distance', 'Ping',
-                'Download', 'Upload', 'Share', 'IP Address']:
+    required_cols = ['Server ID', 'Sponsor', 'Server Name', 'Distance',
+                     'Ping', 'Download', 'Upload', 'Share', 'IP Address']
+    for col in required_cols:
         if col not in export_df.columns:
             export_df[col] = ''
 
@@ -72,7 +84,12 @@ def generate_report(df: pd.DataFrame, client_name: str, isp_name: str,
         '--plan', plan_name,
         '--attorney', attorney_name,
         '--address', address,
-        '--output', output_path
+        '--output', output_path,
+        '--plan_download', str(plan_download),
+        '--plan_upload', str(plan_upload),
+        '--valor_mensal', str(valor_mensal),
+        '--meses', str(meses),
+        '--num_clientes', str(num_clientes)
     ]
     if bill_path:
         cmd.extend(['--bill', bill_path])

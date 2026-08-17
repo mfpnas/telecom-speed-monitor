@@ -17,6 +17,12 @@ if __name__ == "__main__":
     parser.add_argument('--address', default='')
     parser.add_argument('--bill', default=None)
     parser.add_argument('--output', default='report.pdf')
+    # Novos parâmetros para velocidades e configurações
+    parser.add_argument('--plan_download', type=float, default=500)
+    parser.add_argument('--plan_upload', type=float, default=250)
+    parser.add_argument('--valor_mensal', type=float, default=172.00)
+    parser.add_argument('--meses', type=int, default=48)
+    parser.add_argument('--num_clientes', type=int, default=4500)
     args = parser.parse_args()
 
     try:
@@ -29,7 +35,12 @@ if __name__ == "__main__":
             attorney_name=args.attorney,
             address=args.address,
             bill_path=args.bill,
-            output_path=args.output
+            output_path=args.output,
+            valor_mensal=args.valor_mensal,
+            meses=args.meses,
+            plan_download=args.plan_download,
+            plan_upload=args.plan_upload,
+            num_clientes=args.num_clientes
         )
     except Exception as e:
         print(f"Erro: {e}")

@@ -1,4 +1,4 @@
-"""Carregamento e cache dos dados."""
+"""Carregamento e cache dos dados a partir dos CSVs."""
 
 import os
 import glob
@@ -8,10 +8,11 @@ import streamlit as st
 
 @st.cache_data(ttl=300)
 def load_data(log_dir: str) -> pd.DataFrame:
-    """Carrega todos os CSVs do diretório e os concatena em um único DataFrame.
+    """
+    Carrega todos os CSVs do diretório e os concatena em um único DataFrame.
 
     Args:
-        log_dir: Diretório onde estão os arquivos *_speed_logs.csv.
+        log_dir: Caminho do diretório onde estão os arquivos *_speed_logs.csv.
 
     Returns:
         DataFrame com todos os dados, com coluna 'Tool' adicionada.

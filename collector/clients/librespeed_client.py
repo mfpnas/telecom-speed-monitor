@@ -1,10 +1,11 @@
+# collector/clients/librespeed_client.py
 import subprocess
 import json
 
 def run():
     try:
         result = subprocess.run(
-            ['npx', '--yes', 'speedtest-cli', '--json'],
+            ['npx', '--yes', 'librespeed-cli', '--json'],   # comando corrigido
             capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
