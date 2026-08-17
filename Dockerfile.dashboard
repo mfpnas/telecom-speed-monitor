@@ -1,27 +1,31 @@
+# Dockerfile.dashboard
 FROM python:3.11-slim
-
-# Create a user with UID 1000 (same as host) to avoid root file ownership
-ARG USER_ID=1000
-ARG GROUP_ID=1000
-RUN groupadd -g ${GROUP_ID} appuser && \
-    useradd -m -u ${USER_ID} -g appuser appuser
 
 WORKDIR /app
 
+# Instala dependências do sistema necessárias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia os requisitos e instala as dependências Python
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy files and set ownership
-COPY dashboard/ ./dashboard/
-COPY scripts/ ./scripts/
-COPY data/ ./data/
+# Copia os módulos do projeto
+COPY dashboard/ /app/dashboard/
+COPY report/ /app/report/
+COPY scripts/ /app/scripts/
 
-# Ensure the data directory is writable by appuser (if it exists)
-RUN mkdir -p /app/data/logs && chown -R appuser:appuser /app/data
+# --- LINHA IMPORTANTE ADICIONADA ABAIXO ---
+COPY generate_pdf_report.py /app/generate_pdf_report.py
+# ------------------------------------------
 
-# Switch to non-root user
-USER appuser
+# Copia o wrapper principal do streamlit
+COPY app.py /app/app.py
 
+# Expõe a porta do Streamlit
 EXPOSE 8501
 
-CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Comando para iniciar o dashboard
+CMD ["streamlit", "run", "app.py"]
