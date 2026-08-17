@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import pytz
-from .data_loader import load_data
-from .filters import apply_time_filters
-from .report_generator import generate_report
+from dashboard.data_loader import load_data          # <-- import absoluto
+from dashboard.filters import apply_time_filters      # <-- import absoluto
+from dashboard.report_generator import generate_report # <-- import absoluto
 
 
 # ------------------------------------------------------------
@@ -303,7 +303,7 @@ def main():
                 log_dir=LOG_DIR,
                 plan_download=plan_download,
                 plan_upload=plan_upload,
-                valor_mensal=172.00,      # pode ser ajustado conforme necessário
+                valor_mensal=172.00,
                 meses=48,
                 num_clientes=4500
             )
