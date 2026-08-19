@@ -8,6 +8,7 @@ RUN groupadd -g 1000 appuser && \
 # Instala dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    wget \
     npm \
     iperf3 \
     chromium \
@@ -20,12 +21,9 @@ RUN pip install speedtest-cli
 RUN npm install -g fast-cli
 
 # Baixa e instala o binário librespeed-cli (oficial) a partir do GitHub
-# Versão estável v1.0.11 (amd64)
-RUN curl -L -o /tmp/librespeed-cli.tar.gz \
-    https://github.com/librespeed/speedtest-cli/releases/download/v1.0.11/librespeed-cli_linux_amd64.tar.gz && \
-    tar xzf /tmp/librespeed-cli.tar.gz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/librespeed-cli && \
-    rm /tmp/librespeed-cli.tar.gz
+# Usa wget com pipe para evitar problemas com arquivo temporário
+RUN wget -qO- https://github.com/librespeed/speedtest-cli/releases/download/v1.0.11/librespeed-cli_linux_amd64.tar.gz | tar xz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/librespeed-cli
 
 # Define o diretório de trabalho
 WORKDIR /app
