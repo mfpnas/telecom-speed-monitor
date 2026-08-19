@@ -1,34 +1,48 @@
+# Dockerfile.collector
 FROM python:3.11-slim
 
-ARG USER_ID=1000
-ARG GROUP_ID=1000
-RUN groupadd -g ${GROUP_ID} appuser && \
-    useradd -m -u ${USER_ID} -g appuser appuser
+# Cria um usuário não-root
+RUN groupadd -g 1000 appuser && \
+    useradd -m -u 1000 -g appuser appuser
 
-RUN apt-get update && apt-get install -y \
+# Instala dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     npm \
     iperf3 \
     chromium \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-
+# Instala speedtest-cli (Ookla) via pip
 RUN pip install speedtest-cli
+
+# Instala fast-cli via npm
 RUN npm install -g fast-cli
 
+# Baixa e instala o binário librespeed-cli (oficial) a partir do GitHub
+# Versão estável v1.0.11 (amd64)
+RUN curl -L -o /tmp/librespeed-cli.tar.gz \
+    https://github.com/librespeed/speedtest-cli/releases/download/v1.0.11/librespeed-cli_linux_amd64.tar.gz && \
+    tar xzf /tmp/librespeed-cli.tar.gz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/librespeed-cli && \
+    rm /tmp/librespeed-cli.tar.gz
+
+# Define o diretório de trabalho
 WORKDIR /app
 
+# Copia os requisitos e instala dependências Python
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copia o código do coletor e dos scripts
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-# Cria o diretório /app (se não existir) e ajusta as permissões
+# Ajusta permissões para o usuário appuser
 RUN mkdir -p /app && chown -R appuser:appuser /app
 
+# Muda para o usuário appuser
 USER appuser
 
-CMD ["python", "-u", "-m", "collector.main"]
+# Comando de entrada
+CMD ["python", "-m", "collector.main"]

@@ -4,8 +4,9 @@ import json
 
 def run():
     try:
+        # Usa o binário librespeed-cli instalado no sistema
         result = subprocess.run(
-            ['npx', '--yes', 'librespeed-cli', '--json'],   # comando corrigido
+            ['librespeed-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
