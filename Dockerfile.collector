@@ -12,7 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iperf3 \
     chromium \
     golang \
+    ca-certificates \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Atualiza o Node.js para a versão 22.x (compatível com Puppeteer 25+)
+# Adiciona o repositório oficial do NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Instala speedtest-cli (Ookla) via pip
 RUN pip install speedtest-cli
@@ -36,7 +44,9 @@ RUN mkdir -p /home/appuser/.cache/puppeteer && \
 
 # Executa o download do Chrome como appuser (necessário para o fast-cli)
 USER appuser
-RUN npx --yes puppeteer browsers install chrome
+# Limpa o cache parcial e instala o Chrome
+RUN npx --yes puppeteer browsers clear && \
+    npx --yes puppeteer browsers install chrome
 
 # Volta para o usuário root para continuar as configurações
 USER root
