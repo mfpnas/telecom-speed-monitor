@@ -1,0 +1,6 @@
+pandas
+numpy
+schedule
+pytz
+ping3
+python-dotenv

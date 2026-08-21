@@ -3,32 +3,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instala dependências do sistema necessárias
+# Instala dependências do sistema (necessárias para matplotlib, reportlab, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia os requisitos e instala as dependências Python
+# Copia e instala as dependências Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia os módulos do projeto
 COPY dashboard/ /app/dashboard/
 COPY report/ /app/report/
+COPY generate_pdf_report.py /app/generate_pdf_report.py
 COPY scripts/ /app/scripts/
 
-# Copia o wrapper do gerador de PDF (agora dentro de scripts/)
-COPY scripts/generate_pdf_report.py /app/generate_pdf_report.py
-
-# Copia o wrapper principal do streamlit
-COPY app.py /app/app.py
-
-# Define o diretório de configuração do Matplotlib e concede permissão total
+# Define o diretório de cache do Matplotlib para evitar erros de permissão
 ENV MPLCONFIGDIR=/tmp/matplotlib
-RUN mkdir -p /tmp/matplotlib && chmod 777 /tmp/matplotlib   # <-- permissão total para escrita
+RUN mkdir -p /tmp/matplotlib && chmod 777 /tmp/matplotlib
 
 # Expõe a porta do Streamlit
 EXPOSE 8501
 
-# Comando para iniciar o dashboard
+# Comando de entrada
 CMD ["streamlit", "run", "app.py"]

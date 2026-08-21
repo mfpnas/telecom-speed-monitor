@@ -15,7 +15,6 @@ services:
       - telecom_net
 
   dashboard:
-    user: "1000:1000"
     build:
       context: .
       dockerfile: Dockerfile.dashboard
@@ -27,6 +26,8 @@ services:
     environment:
       - LOG_DIR=/app/data/logs
     restart: unless-stopped
+    depends_on:
+      - collector
     networks:
       - telecom_net
 

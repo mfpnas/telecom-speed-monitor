@@ -4,6 +4,7 @@
 import subprocess
 import tempfile
 import os
+import sys
 import base64
 import pandas as pd
 from datetime import datetime
@@ -27,16 +28,6 @@ def generate_report(
     meses: int = 48,
     num_clientes: int = 4500
 ) -> str:
-    """
-    Gera o relatório PDF via subprocess e retorna o link de download.
-
-    Args:
-        ... (outros parâmetros existentes)
-        plan_download, plan_upload, valor_mensal, meses, num_clientes: novos parâmetros.
-
-    Returns:
-        String HTML com o link de download do PDF, ou string vazia em caso de erro.
-    """
     threshold = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=export_days)
 
     if export_tool == "All Tools":
@@ -48,7 +39,6 @@ def generate_report(
         st.error("No data for the selected period and tool.")
         return ""
 
-    # Garantir colunas necessárias
     required_cols = ['Server ID', 'Sponsor', 'Server Name', 'Distance',
                      'Ping', 'Download', 'Upload', 'Share', 'IP Address']
     for col in required_cols:
@@ -72,10 +62,12 @@ def generate_report(
     filename = f"{datetime.now().strftime('%Y%m%d')}_{safe_isp}_{safe_client}_{start_str}-{end_str}.pdf"
     output_path = os.path.join(log_dir, filename)
 
-    # --- CORREÇÃO DO CAMINHO ---
-    # Usa o script localizado na raiz do projeto (/app/generate_pdf_report.py)
+    script_path = '/app/generate_pdf_report.py'
+    if not os.path.exists(script_path):
+        script_path = '/app/scripts/generate_pdf_report.py'
+
     cmd = [
-        'python', '-u', '/app/generate_pdf_report.py',   # <-- caminho corrigido
+        sys.executable, '-u', script_path,
         '--csv', csv_path,
         '--client', client_name,
         '--isp', isp_name,

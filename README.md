@@ -7,16 +7,17 @@
 ## 📖 Índice
 
 1. [Visão Geral](#visão-geral)
-2. [Arquitetura do Projeto](#arquitetura-do-projeto)
+2. [Arquitetura](#arquitetura)
 3. [Funcionalidades](#funcionalidades)
 4. [Pré-requisitos](#pré-requisitos)
 5. [Instalação e Execução](#instalação-e-execução)
 6. [Configuração](#configuração)
 7. [Monitoramento e Saúde](#monitoramento-e-saúde)
 8. [Gerando Relatórios](#gerando-relatórios)
-9. [Estrutura de Diretórios](#estrutura-de-diretórios)
-10. [Como Contribuir](#como-contribuir)
-11. [Licença](#licença)
+9. [Solução de Problemas](#solução-de-problemas)
+10. [Estrutura de Diretórios](#estrutura-de-diretórios)
+11. [Como Contribuir](#como-contribuir)
+12. [Licença](#licença)
 
 ---
 
@@ -30,7 +31,7 @@ O **Telecom Speed Monitor** é uma solução auto-hospedada e baseada em **Docke
 
 ---
 
-## Arquitetura do Projeto
+## Arquitetura
 
 ### Diagrama de Componentes e Fluxo de Dados
 
@@ -208,9 +209,28 @@ Quando você executa `docker compose up -d --build`, a seguinte sequência de ev
 
 ## Monitoramento e Saúde
 
-O projeto inclui um script de health check (`scripts/monitor.py`) que pode ser integrado ao **systemd** para garantir que os containers estejam sempre em execução.
+O projeto inclui dois scripts de monitoramento que podem ser usados para garantir que os containers estejam sempre em execução e os dados sendo coletados.
 
-### 1. Criar o serviço systemd
+### 1. Script `scripts/monitor.py` (Python)
+
+Este script verifica containers e arquivos CSV. Pode ser executado manualmente ou agendado via cron/systemd.
+
+```bash
+python3 scripts/monitor.py
+```
+
+### 2. Script `scripts/health_check.sh` (Bash)
+
+Um script bash simples para verificação rápida de saúde. Torne-o executável e execute:
+
+```bash
+chmod +x scripts/health_check.sh
+./scripts/health_check.sh
+```
+
+### 3. Integração com systemd (opcional)
+
+Para executar automaticamente a cada minuto, crie os arquivos abaixo:
 
 **Arquivo:** `/etc/systemd/system/telecom-monitor.service`
 ```ini
@@ -242,14 +262,14 @@ OnUnitActiveSec=1min
 WantedBy=timers.target
 ```
 
-### 2. Habilitar e iniciar
+**Habilitar e iniciar:**
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable telecom-monitor.timer
 sudo systemctl start telecom-monitor.timer
 ```
 
-### 3. Rotação de logs
+**Rotação de logs (opcional):**  
 Crie `/etc/logrotate.d/telecom-monitor` com:
 ```
 /var/log/telecom-monitor/monitor.log {
@@ -290,6 +310,27 @@ docker exec -it telecom_dashboard python /app/generate_pdf_report.py \
 
 ---
 
+## Solução de Problemas
+
+### 1. O dashboard não mostra dados
+- Aguarde alguns minutos para o coletor gerar os primeiros CSVs.
+- Verifique se o volume `./data/logs` contém arquivos `*_speed_logs.csv`.
+- Acesse `docker logs -f telecom_collector` para ver possíveis erros.
+
+### 2. Erro "Could not find Chrome" no coletor
+- Execute `docker compose exec collector npx puppeteer browsers install chrome` para instalar o Chrome.
+- Certifique-se de que o `Dockerfile.collector` foi reconstruído com as instruções corretas.
+
+### 3. Erro de permissão do Matplotlib no dashboard
+- A variável `MPLCONFIGDIR=/tmp/matplotlib` já está definida no `Dockerfile.dashboard`.
+- Se o erro persistir, verifique se o diretório `/tmp/matplotlib` tem permissão de escrita (`chmod 777`).
+
+### 4. O PDF não é gerado
+- Verifique se o script `generate_pdf_report.py` existe no container (`docker exec -it telecom_dashboard ls /app/generate_pdf_report.py`).
+- Verifique os logs do dashboard (`docker logs -f telecom_dashboard`).
+
+---
+
 ## Estrutura de Diretórios
 
 ```
@@ -324,14 +365,16 @@ telecom-speed-monitor/
 │   └── formatters.py               # Formatação BR
 │
 ├── scripts/                        # Scripts auxiliares
-│   └── monitor.py                  # Health check
+│   ├── health_check.sh             # Script bash para verificação rápida
+│   └── monitor.py                  # Monitor Python (containers + CSVs)
 │
-├── generate_pdf_report.py          # Wrapper CLI para geração de PDF
 ├── app.py                          # Wrapper para o dashboard (ponto de entrada)
+├── generate_pdf_report.py          # Wrapper CLI para geração de PDF
 ├── docker-compose.yml
 ├── Dockerfile.collector
 ├── Dockerfile.dashboard
 ├── requirements.txt
+├── requirements.collector.txt
 ├── .env.example
 └── README.md
 ```

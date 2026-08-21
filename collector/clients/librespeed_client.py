@@ -8,7 +8,6 @@ def run():
             ['librespeed-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
-        
         if result.returncode != 0:
             print(f"librespeed returncode: {result.returncode}")
             print(f"stderr: {result.stderr}")
@@ -21,15 +20,13 @@ def run():
 
         data = json.loads(output)
 
-        # O librespeed-cli pode retornar um objeto ou uma lista de objetos
+        # O librespeed-cli pode retornar uma lista ou um dicionário
         if isinstance(data, list):
             if not data:
                 print("librespeed: empty list")
                 return None
-            # Usa o primeiro elemento da lista (o mais comum é um único resultado)
             data = data[0]
         elif isinstance(data, dict):
-            # Se o objeto tiver uma chave 'results' que é uma lista, usa o primeiro
             if 'results' in data and isinstance(data['results'], list):
                 results = data['results']
                 if not results:
@@ -41,8 +38,6 @@ def run():
             return None
 
         server = data.get('server', {})
-        client = data.get('client', {})
-
         return {
             'server_id': str(server.get('id', '')),
             'sponsor': server.get('sponsor', 'LibreSpeed'),
@@ -51,8 +46,8 @@ def run():
             'server_lon': float(server.get('lon', 0)),
             'distance': float(server.get('d', 0)),
             'ping': data.get('ping', 0),
-            'download_bps': data.get('download', 0),   # já em bps
-            'upload_bps': data.get('upload', 0),       # já em bps
+            'download_bps': data.get('download', 0),
+            'upload_bps': data.get('upload', 0),
         }
     except json.JSONDecodeError as e:
         print(f"librespeed JSON decode error: {e}")

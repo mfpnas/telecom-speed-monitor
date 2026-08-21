@@ -1,54 +1,50 @@
-# Stage 1: Compilação do librespeed-cli
-FROM golang:1.22-alpine AS builder
-WORKDIR /src
-RUN CGO_ENABLED=0 go install github.com/librespeed/speedtest-cli@latest
-# O binário estará em /go/bin/speedtest-cli
-
-# Stage 2: Runtime do coletor
+# Dockerfile.collector
 FROM python:3.11-slim
 
 # Cria usuário não-root
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser
 
-# Instala dependências do sistema (inclui Chromium para o fast-cli)
+# Instala dependências do sistema (sem chromium, pois o Chrome é baixado pelo Puppeteer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    npm \
     iperf3 \
-    chromium \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala Node.js 22 + npm (necessário para o fast-cli)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs npm && \
-    rm -rf /var/lib/apt/lists/*
-
-# Instala dependências Python
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Instala dependências Python do coletor (apenas as necessárias)
+COPY requirements.collector.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.collector.txt
 
 # Instala speedtest-cli (Ookla)
 RUN pip install speedtest-cli
 
-# Instala fast-cli globalmente, sem baixar Chrome (usa o Chromium do sistema)
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Instala fast-cli via npm
 RUN npm install -g fast-cli
 
-# Copia o binário compilado do librespeed-cli do estágio 1
-COPY --from=builder /go/bin/speedtest-cli /usr/local/bin/librespeed-cli
-RUN chmod +x /usr/local/bin/librespeed-cli
+# Compila e instala librespeed-cli via Go (sem dependências de download externas)
+RUN apt-get update && apt-get install -y golang && \
+    GO111MODULE=on go install github.com/librespeed/speedtest-cli@latest && \
+    cp /root/go/bin/speedtest-cli /usr/local/bin/librespeed-cli && \
+    chmod +x /usr/local/bin/librespeed-cli && \
+    apt-get remove -y golang && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copia o código do coletor e scripts
+# Instala Chrome para o Puppeteer (necessário para fast-cli)
+RUN mkdir -p /home/appuser/.cache/puppeteer && \
+    chown -R appuser:appuser /home/appuser/.cache/puppeteer
+
+USER appuser
+RUN npx --yes puppeteer browsers install chrome
+
+USER root
+
+WORKDIR /app
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-# Ajusta permissões para o usuário appuser
 RUN chown -R appuser:appuser /app
-
 USER appuser
 
-# Comando de entrada
 CMD ["python", "-m", "collector.main"]
