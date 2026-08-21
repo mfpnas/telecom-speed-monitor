@@ -10,3 +10,4 @@ schedule
 pytz
 reportlab
 ping3
+scipy

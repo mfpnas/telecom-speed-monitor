@@ -19,13 +19,24 @@ RUN pip install speedtest-cli
 # Instala fast-cli via npm
 RUN npm install -g fast-cli
 
-# Baixa e instala o binário librespeed-cli (versão 1.0.14, 64-bit)
-# Usa o link direto para a versão 1.0.14 (amd64)
-RUN curl -L --fail -o /tmp/librespeed-cli.tar.gz \
-    https://github.com/librespeed/speedtest-cli/releases/download/v1.0.14/librespeed-cli_1.0.14_linux_amd64.tar.gz && \
+# Baixa e instala o binário librespeed-cli (versão amd64 mais recente)
+RUN curl -L --fail --retry 3 -o /tmp/librespeed-cli.tar.gz \
+    https://github.com/librespeed/speedtest-cli/releases/latest/download/librespeed-cli_linux_amd64.tar.gz && \
     tar xzf /tmp/librespeed-cli.tar.gz -C /usr/local/bin && \
     chmod +x /usr/local/bin/librespeed-cli && \
     rm /tmp/librespeed-cli.tar.gz
+
+# --- INSTALA CHROME PARA O PUPPETEER (fast-cli) ---
+# Cria o diretório de cache e concede permissão ao usuário appuser
+RUN mkdir -p /home/appuser/.cache/puppeteer && \
+    chown -R appuser:appuser /home/appuser/.cache/puppeteer
+
+# Executa o download do Chrome como appuser
+USER appuser
+RUN npx --yes puppeteer browsers install chrome
+
+# Volta para o usuário root para continuar as configurações
+USER root
 
 # Define o diretório de trabalho
 WORKDIR /app
@@ -41,7 +52,7 @@ COPY scripts/ ./scripts/
 # Ajusta permissões para o usuário appuser
 RUN mkdir -p /app && chown -R appuser:appuser /app
 
-# Muda para o usuário appuser
+# Muda para o usuário appuser (execução final)
 USER appuser
 
 # Comando de entrada

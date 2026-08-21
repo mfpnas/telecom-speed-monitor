@@ -96,7 +96,7 @@ def build_objective(styles: Dict, stats: Dict) -> List:
     """
     else:
         objective_text += """
-    Não foi possível confirmar a prática de throttling devido à indisponibilidade de dados em ambos os períodos (dias úteis e fins de semana) para comparação.
+    Não foi possível confirmar a prática de throttling devido à indisponibilidade de dados significativos em ambos os períodos (dias úteis e fins de semana) para comparação.
     """
     if interruptions > 0:
         objective_text += f"""
@@ -198,10 +198,11 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", styles['body']))
 
-    # 3.2 Comparação Dias Úteis vs. Fins de Semana
+    # 3.2 Comparação Dias Úteis vs. Fins de Semana (COM NOVOS DADOS)
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", styles['heading2']))
     weekend_stats = stats['weekend_stats']
     clean = stats['clean_df']
+    throttling = stats['throttling']
     if len(weekend_stats) == 2:
         wk_med = weekend_stats[False]
         we_med = weekend_stats[True]
@@ -227,29 +228,37 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
         ]))
         story.append(KeepTogether([table_comp, Spacer(1, 0.3*cm)]))
         reducao = ((wk_med - we_med) / wk_med) * 100 if wk_med > 0 else 0
-        story.append(Paragraph(
-            f"Observação: Há uma redução média de {reducao:.1f}% na velocidade nos fins de semana, o que evidencia gestão de tráfego sem aviso prévio.",
-            styles['body']
-        ))
+        if throttling['detected']:
+            texto_observacao = (f"Observação: Foi identificada redução média de {reducao:.1f}% na velocidade nos fins de semana. "
+                                f"O teste estatístico Mann-Whitney U retornou p-valor = {throttling['p_value']:.4f}, "
+                                f"indicando diferença significativa entre os períodos (p < 0.05). "
+                                f"Isso evidencia possível throttling, conforme análise detalhada na seção 3.3.")
+        else:
+            texto_observacao = (f"Observação: Há uma variação de {reducao:.1f}% na velocidade nos fins de semana, "
+                                f"mas o teste estatístico não indicou diferença significativa (p-valor = {throttling['p_value']:.4f}), "
+                                f"não sendo possível confirmar throttling.")
+        story.append(Paragraph(texto_observacao, styles['body']))
     else:
         story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", styles['body']))
     story.append(Spacer(1, 0.3*cm))
 
-    # 3.3 Throttling
+    # 3.3 Análise de Throttling (reformulada)
     story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", styles['heading2']))
-    throttling = stats['throttling']
     if throttling['detected']:
         throttle_text = f"""
-        A análise dos dados coletados revelou a prática de throttling (redução arbitrária de velocidade) nos fins de semana. 
-        A velocidade mediana de download nos dias úteis foi de {wk_med:.1f} Mbps, enquanto nos fins de semana caiu para {we_med:.1f} Mbps, 
-        representando uma redução de {throttling['percent']:.1f}%. 
-        Esta redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º), 
+        A análise dos dados coletados confirmou a prática de throttling (redução arbitrária de velocidade) nos fins de semana.
+        A velocidade mediana de download nos dias úteis foi de {throttling['weekday_median']:.1f} Mbps, enquanto nos fins de semana
+        caiu para {throttling['weekend_median']:.1f} Mbps, representando uma redução de {throttling['percent']:.1f}%.
+        O teste estatístico Mann-Whitney U confirmou que essa diferença é estatisticamente significativa (p-valor = {throttling['p_value']:.4f}).
+        Essa redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º),
         ao direito à informação adequada (CDC, art. 6º, III) e à boa-fé objetiva (CDC, art. 4º, III).
         """
     else:
-        throttle_text = """
-        Não foi possível confirmar a prática de throttling com os dados disponíveis, pois apenas um dos períodos (dias úteis ou fins de semana) 
-        possui registros suficientes para comparação. Recomenda-se a continuidade das medições para obter dados em ambos os períodos.
+        throttle_text = f"""
+        Não foi possível confirmar a prática de throttling com os dados disponíveis.
+        A análise comparativa entre dias úteis e fins de semana apresentou uma variação de {throttling.get('percent', 0):.1f}%,
+        porém o teste estatístico não indicou diferença significativa (p-valor = {throttling.get('p_value', 1.0):.4f}).
+        Recomenda-se a continuidade das medições para obter mais dados e reavaliar o comportamento em períodos de maior tráfego.
         """
     story.append(Paragraph(throttle_text, styles['body']))
     story.append(PageBreak())
@@ -474,15 +483,8 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
             valid_img_paths.append(path)
 
     if valid_img_paths:
-        # Configuração da página: margens 2cm, largura útil ~ 17cm
-        page_width = 17 * cm
-        gap = 0.5 * cm
-        # 2 colunas
-        img_width = (page_width - gap) / 2
-        # Definir altura proporcional (assumindo proporção 4:3 ou 16:9, usamos 4:3 como padrão)
-        # Podemos calcular a altura real da imagem para manter a proporção, mas usaremos uma altura fixa
-        # para garantir que todas as imagens tenham o mesmo tamanho.
-        img_height = 6.5 * cm  # altura razoável para caber 2 linhas na página
+        img_width = 12 * cm
+        img_height = 7 * cm
 
         def build_table_rows(paths):
             rows = []
@@ -496,27 +498,33 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
                 rows.append(row)
             return rows
 
-        # Dividir em páginas com no máximo 4 imagens por página (2x2)
-        page_size = 4
-        for page_start in range(0, len(valid_img_paths), page_size):
-            page_paths = valid_img_paths[page_start:page_start+page_size]
-            if page_start > 0:
-                story.append(PageBreak())
-                story.append(Paragraph(
-                    "8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)",
-                    styles['heading1']
-                ))
-                story.append(Spacer(1, 0.3*cm))
-            table_rows = build_table_rows(page_paths)
-            table = Table(table_rows, colWidths=[img_width, img_width])
-            table.setStyle(TableStyle([
+        first_page_paths = valid_img_paths[:4]
+        table_rows1 = build_table_rows(first_page_paths)
+        table1 = Table(table_rows1, colWidths=[img_width, img_width])
+        table1.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
+        ]))
+        story.append(KeepTogether([table1, Spacer(1, 0.3*cm)]))
+
+        if len(valid_img_paths) > 4:
+            story.append(PageBreak())
+            story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", styles['heading1']))
+            story.append(Spacer(1, 0.3*cm))
+            second_page_paths = valid_img_paths[4:]
+            table_rows2 = build_table_rows(second_page_paths)
+            table2 = Table(table_rows2, colWidths=[img_width, img_width])
+            table2.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 0),
-                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
             ]))
-            story.append(KeepTogether([table, Spacer(1, 0.3*cm)]))
+            story.append(KeepTogether([table2, Spacer(1, 0.3*cm)]))
     else:
         story.append(Paragraph("Nenhum gráfico disponível para exibição.", styles['body']))
 
@@ -544,7 +552,7 @@ def build_executive_summary(styles: Dict, stats: Dict, address: str) -> List:
     if throttling['detected']:
         throttling_desc = f"Redução de {throttling['percent']:.1f}% nos fins de semana (throttling confirmado)."
     else:
-        throttling_desc = "Não foi possível confirmar throttling por falta de dados em um dos períodos."
+        throttling_desc = "Não foi possível confirmar throttling por falta de dados significativos."
 
     resumo_texto = f"""
     Este relatório analisou {total_tests} testes de velocidade (speedtest-cli e LibreSpeed) realizados entre {periodo}.
