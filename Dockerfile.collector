@@ -5,15 +5,19 @@ FROM python:3.11-slim
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser
 
-# Instala dependências do sistema (sem chromium, pois o Chrome é baixado pelo Puppeteer)
+# Instala dependências do sistema, incluindo Chromium (substitui o download do Chrome via Puppeteer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     npm \
     iperf3 \
+    chromium \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala dependências Python do coletor (apenas as necessárias)
+# Define o caminho do executável do Chromium para o Puppeteer (usado pelo fast-cli)
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Instala dependências Python do coletor
 COPY requirements.collector.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.collector.txt
 
@@ -23,7 +27,7 @@ RUN pip install speedtest-cli
 # Instala fast-cli via npm
 RUN npm install -g fast-cli
 
-# Compila e instala librespeed-cli via Go (sem dependências de download externas)
+# Compila e instala librespeed-cli via Go (sem download de arquivos externos)
 RUN apt-get update && apt-get install -y golang && \
     GO111MODULE=on go install github.com/librespeed/speedtest-cli@latest && \
     cp /root/go/bin/speedtest-cli /usr/local/bin/librespeed-cli && \
@@ -31,20 +35,18 @@ RUN apt-get update && apt-get install -y golang && \
     apt-get remove -y golang && apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
-# Instala Chrome para o Puppeteer (necessário para fast-cli)
-RUN mkdir -p /home/appuser/.cache/puppeteer && \
-    chown -R appuser:appuser /home/appuser/.cache/puppeteer
-
-USER appuser
-RUN npx --yes puppeteer browsers install chrome
-
-USER root
-
+# Define o diretório de trabalho
 WORKDIR /app
+
+# Copia o código do coletor e scripts
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-RUN chown -R appuser:appuser /app
+# Ajusta permissões
+RUN mkdir -p /app && chown -R appuser:appuser /app
+
+# Muda para o usuário appuser
 USER appuser
 
+# Comando de entrada
 CMD ["python", "-m", "collector.main"]
