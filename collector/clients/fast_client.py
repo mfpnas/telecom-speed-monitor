@@ -1,7 +1,8 @@
+# collector/clients/fast_client.py
 import subprocess
 import json
 import ping3
-import time
+import re
 
 def run():
     """
@@ -15,8 +16,26 @@ def run():
             ['npx', '--yes', 'fast-cli', '--json'],
             capture_output=True, text=True, timeout=60
         )
-        data = json.loads(result.stdout)
-        download_mbps = data.get('downloadSpeed', 0)
+
+        if result.returncode != 0:
+            print(f"fast-cli returncode: {result.returncode}")
+            print(f"stderr: {result.stderr}")
+            return None
+
+        output = result.stdout.strip()
+        if not output:
+            print("fast-cli: empty output")
+            return None
+
+        # Tenta parsear JSON
+        try:
+            data = json.loads(output)
+            download_mbps = data.get('downloadSpeed', 0)
+        except json.JSONDecodeError:
+            # Se o JSON falhar, tenta extrair a velocidade de um texto simples (ex: "123.45 Mbps")
+            match = re.search(r'([\d.]+)\s*Mbps', output)
+            download_mbps = float(match.group(1)) if match else 0
+            print(f"fast-cli: parsed speed from text: {download_mbps} Mbps")
 
         # Ping complementar usando ping3 (puro Python)
         ping_ms = ping3.ping('8.8.8.8', timeout=2)  # retorna None se timeout
@@ -36,8 +55,8 @@ def run():
             'download_bps': download_mbps * 1e6,
             'upload_bps': 0,  # fast não mede upload
         }
-    except json.JSONDecodeError as e:
-        print(f"fast-cli JSON decode error: {e}")
+    except subprocess.TimeoutExpired:
+        print("fast-cli: timeout expired")
         return None
     except Exception as e:
         print(f"fast-cli error: {e}")
