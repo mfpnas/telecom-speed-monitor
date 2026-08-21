@@ -1,71 +1,53 @@
-# Dockerfile.collector
+# Stage 1: Compilação do librespeed-cli
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+RUN CGO_ENABLED=0 go install github.com/librespeed/speedtest-cli@latest
+# O binário estará em /go/bin/speedtest-cli
+
+# Stage 2: Runtime do coletor
 FROM python:3.11-slim
 
-# Cria um usuário não-root
+# Cria usuário não-root
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser
 
-# Instala dependências do sistema
+# Instala dependências do sistema (inclui Chromium para o fast-cli)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    npm \
     iperf3 \
     chromium \
-    golang \
     ca-certificates \
-    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Atualiza o Node.js para a versão 22.x (compatível com Puppeteer 25+)
-# Adiciona o repositório oficial do NodeSource
+# Instala Node.js 22 + npm (necessário para o fast-cli)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
-# Instala speedtest-cli (Ookla) via pip
-RUN pip install speedtest-cli
-
-# Instala fast-cli via npm
-RUN npm install -g fast-cli
-
-# Compila e instala o librespeed-cli via Go (independente de releases quebrados)
-RUN GO111MODULE=on go install github.com/librespeed/speedtest-cli@latest && \
-    cp /root/go/bin/speedtest-cli /usr/local/bin/librespeed-cli && \
-    chmod +x /usr/local/bin/librespeed-cli && \
-    # Remove o Go para reduzir o tamanho da imagem
-    apt-get remove -y golang && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
-
-# --- INSTALA CHROME PARA O PUPPETEER (fast-cli) ---
-# Cria o diretório de cache e concede permissão ao usuário appuser
-RUN mkdir -p /home/appuser/.cache/puppeteer && \
-    chown -R appuser:appuser /home/appuser/.cache/puppeteer
-
-# Executa o download do Chrome como appuser (necessário para o fast-cli)
-USER appuser
-# Limpa o cache parcial e instala o Chrome
-RUN npx --yes puppeteer browsers clear && \
-    npx --yes puppeteer browsers install chrome
-
-# Volta para o usuário root para continuar as configurações
-USER root
-
-# Define o diretório de trabalho
+# Instala dependências Python
 WORKDIR /app
-
-# Copia os requisitos e instala dependências Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o código do coletor e dos scripts
+# Instala speedtest-cli (Ookla)
+RUN pip install speedtest-cli
+
+# Instala fast-cli globalmente, sem baixar Chrome (usa o Chromium do sistema)
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+RUN npm install -g fast-cli
+
+# Copia o binário compilado do librespeed-cli do estágio 1
+COPY --from=builder /go/bin/speedtest-cli /usr/local/bin/librespeed-cli
+RUN chmod +x /usr/local/bin/librespeed-cli
+
+# Copia o código do coletor e scripts
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
 # Ajusta permissões para o usuário appuser
-RUN mkdir -p /app && chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app
 
-# Muda para o usuário appuser (execução final)
 USER appuser
 
 # Comando de entrada
