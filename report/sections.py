@@ -198,7 +198,7 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", styles['body']))
 
-    # 3.2 Comparação Dias Úteis vs. Fins de Semana (COM NOVOS DADOS)
+    # 3.2 Comparação Dias Úteis vs. Fins de Semana
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", styles['heading2']))
     weekend_stats = stats['weekend_stats']
     clean = stats['clean_df']
@@ -252,6 +252,13 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
         O teste estatístico Mann-Whitney U confirmou que essa diferença é estatisticamente significativa (p-valor = {throttling['p_value']:.4f}).
         Essa redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º),
         ao direito à informação adequada (CDC, art. 6º, III) e à boa-fé objetiva (CDC, art. 4º, III).
+
+        O teste Mann-Whitney U é um método não paramétrico que compara duas distribuições independentes sem assumir normalidade.
+        Ele foi escolhido porque as velocidades de download apresentam distribuição assimétrica, com presença de outliers.
+        O teste calcula a probabilidade (p-valor) de que a diferença observada entre os grupos ocorra por acaso.
+        Neste caso, o p-valor = {throttling['p_value']:.4f} é extremamente baixo (menor que 0.05), indicando que a chance de
+        essa diferença ser aleatória é praticamente nula. Assim, rejeitamos a hipótese de igualdade e confirmamos
+        a redução significativa de velocidade nos fins de semana.
         """
     else:
         throttle_text = f"""
@@ -483,8 +490,13 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
             valid_img_paths.append(path)
 
     if valid_img_paths:
-        img_width = 12 * cm
-        img_height = 7 * cm
+        # Largura útil da página A4 (21cm - 2*2cm de margem)
+        page_width = 17 * cm
+        gap = 0.3 * cm
+        # Duas colunas com espaçamento
+        img_width = (page_width - gap) / 2
+        # Altura proporcional (mantendo razão ~4:3)
+        img_height = img_width * 0.7
 
         def build_table_rows(paths):
             rows = []
@@ -498,33 +510,27 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
                 rows.append(row)
             return rows
 
-        first_page_paths = valid_img_paths[:4]
-        table_rows1 = build_table_rows(first_page_paths)
-        table1 = Table(table_rows1, colWidths=[img_width, img_width])
-        table1.setStyle(TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
-        ]))
-        story.append(KeepTogether([table1, Spacer(1, 0.3*cm)]))
-
-        if len(valid_img_paths) > 4:
-            story.append(PageBreak())
-            story.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)", styles['heading1']))
-            story.append(Spacer(1, 0.3*cm))
-            second_page_paths = valid_img_paths[4:]
-            table_rows2 = build_table_rows(second_page_paths)
-            table2 = Table(table_rows2, colWidths=[img_width, img_width])
-            table2.setStyle(TableStyle([
+        # Dividir em páginas com no máximo 4 imagens (2x2)
+        page_size = 4
+        for page_start in range(0, len(valid_img_paths), page_size):
+            page_paths = valid_img_paths[page_start:page_start+page_size]
+            if page_start > 0:
+                story.append(PageBreak())
+                story.append(Paragraph(
+                    "8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS (continuação)",
+                    styles['heading1']
+                ))
+                story.append(Spacer(1, 0.3*cm))
+            table_rows = build_table_rows(page_paths)
+            table = Table(table_rows, colWidths=[img_width, img_width])
+            table.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 0.2*cm),
-                ('RIGHTPADDING', (0,0), (-1,-1), 0.2*cm),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 0.5*cm),
             ]))
-            story.append(KeepTogether([table2, Spacer(1, 0.3*cm)]))
+            story.append(KeepTogether([table, Spacer(1, 0.3*cm)]))
     else:
         story.append(Paragraph("Nenhum gráfico disponível para exibição.", styles['body']))
 

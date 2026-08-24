@@ -6,6 +6,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from typing import List, Tuple
+from scipy import stats as scipy_stats  # adicionado para Mann-Whitney
 
 
 def generate_comparison_plots(df_speed: pd.DataFrame, df_librespeed: pd.DataFrame,
@@ -146,5 +147,39 @@ def generate_comparison_plots(df_speed: pd.DataFrame, df_librespeed: pd.DataFram
     plt.savefig(os.path.join(output_dir, fname), dpi=200)
     plt.close()
     images.append(fname)
+
+    # 8. BOXPLOT DIAS ÚTEIS VS FINS DE SEMANA (MANN-WHITNEY)
+    # Verificar se a coluna IsWeekend existe
+    if 'IsWeekend' in combined.columns:
+        weekday_data = combined[~combined['IsWeekend']]['Download_Mbps'].dropna()
+        weekend_data = combined[combined['IsWeekend']]['Download_Mbps'].dropna()
+        if len(weekday_data) >= 10 and len(weekend_data) >= 10:
+            # Teste Mann-Whitney U
+            _, p_value = scipy_stats.mannwhitneyu(weekday_data, weekend_data, alternative='two-sided')
+            med_wk = weekday_data.median()
+            med_we = weekend_data.median()
+            reducao = ((med_wk - med_we) / med_wk) * 100 if med_wk > 0 else 0
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            # Dados para plot
+            plot_data = [
+                weekday_data,
+                weekend_data
+            ]
+            bp = ax.boxplot(plot_data, patch_artist=True, widths=0.5)
+            # Personalizar cores
+            bp['boxes'][0].set_facecolor('#3498db')
+            bp['boxes'][1].set_facecolor('#e74c3c')
+            ax.set_xticklabels(['Dias úteis', 'Fins de semana'])
+            ax.set_ylabel('Download (Mbps)')
+            ax.set_title(f'Mann-Whitney U (p = {p_value:.4f})\nRedução: {reducao:.1f}%')
+            # Linhas de mediana
+            ax.axhline(med_wk, color='blue', linestyle='--', alpha=0.5, linewidth=1)
+            ax.axhline(med_we, color='red', linestyle='--', alpha=0.5, linewidth=1)
+            plt.tight_layout()
+            fname_mw = 'mann_whitney_plot.png'
+            plt.savefig(os.path.join(output_dir, fname_mw), dpi=200)
+            plt.close()
+            images.append(fname_mw)
 
     return images

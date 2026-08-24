@@ -1,11 +1,16 @@
-# Dockerfile.collector
+# Estágio 1: compilar librespeed-cli com Go
+FROM golang:1.25 AS librespeed-builder
+ENV GO111MODULE=on
+RUN go install github.com/librespeed/speedtest-cli@latest
+
+# Estágio 2: imagem final
 FROM python:3.11-slim
 
 # Cria usuário não-root
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser appuser
 
-# Instala dependências do sistema, incluindo Chromium (substitui o download do Chrome via Puppeteer)
+# Instala dependências do sistema (sem Go)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     npm \
@@ -14,39 +19,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Define o caminho do executável do Chromium para o Puppeteer (usado pelo fast-cli)
+# Variável para o Puppeteer usar o Chromium do sistema (fast-cli)
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Instala dependências Python do coletor
+# Instala dependências Python do coletor com cache
 COPY requirements.collector.txt /tmp/
-RUN pip install --no-cache-dir -r /tmp/requirements.collector.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r /tmp/requirements.collector.txt
 
-# Instala speedtest-cli (Ookla)
-RUN pip install speedtest-cli
+# Instala speedtest-cli (Ookla) com cache
+RUN --mount=type=cache,target=/root/.cache/pip pip install speedtest-cli
 
-# Instala fast-cli via npm
-RUN npm install -g fast-cli
+# Instala fast-cli via npm com cache
+RUN --mount=type=cache,target=/root/.npm npm install -g fast-cli
 
-# Compila e instala librespeed-cli via Go (sem download de arquivos externos)
-RUN apt-get update && apt-get install -y golang && \
-    GO111MODULE=on go install github.com/librespeed/speedtest-cli@latest && \
-    cp /root/go/bin/speedtest-cli /usr/local/bin/librespeed-cli && \
-    chmod +x /usr/local/bin/librespeed-cli && \
-    apt-get remove -y golang && apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
+# Copia o binário compilado no estágio anterior
+COPY --from=librespeed-builder /go/bin/speedtest-cli /usr/local/bin/librespeed-cli
+RUN chmod +x /usr/local/bin/librespeed-cli
 
-# Define o diretório de trabalho
 WORKDIR /app
-
-# Copia o código do coletor e scripts
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-# Ajusta permissões
 RUN mkdir -p /app && chown -R appuser:appuser /app
-
-# Muda para o usuário appuser
 USER appuser
 
-# Comando de entrada
 CMD ["python", "-m", "collector.main"]

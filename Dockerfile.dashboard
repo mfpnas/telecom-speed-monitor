@@ -3,27 +3,25 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instala dependências do sistema (necessárias para matplotlib, reportlab, etc.)
+# Instala dependências do sistema (apenas o essencial)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia e instala as dependências Python
+# Copia e instala dependências Python com cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r requirements.txt
 
 # Copia os módulos do projeto
 COPY dashboard/ /app/dashboard/
 COPY report/ /app/report/
 COPY generate_pdf_report.py /app/generate_pdf_report.py
 COPY scripts/ /app/scripts/
+# ADICIONADO: copia o wrapper principal do Streamlit
+COPY app.py /app/app.py
 
-# Define o diretório de cache do Matplotlib para evitar erros de permissão
+# Configura Matplotlib para usar /tmp (evita permissões)
 ENV MPLCONFIGDIR=/tmp/matplotlib
 RUN mkdir -p /tmp/matplotlib && chmod 777 /tmp/matplotlib
 
-# Expõe a porta do Streamlit
 EXPOSE 8501
-
-# Comando de entrada
 CMD ["streamlit", "run", "app.py"]

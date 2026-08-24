@@ -1,4 +1,4 @@
-"""Dashboard Streamlit para o Telecom Speed Monitor (Mobile-Friendly)."""
+"""Dashboard Streamlit para o Telecom Speed Monitor (Desktop & Mobile)."""
 
 import sys
 import os
@@ -60,35 +60,22 @@ st.markdown("""
 <style>
     /* Ajustes gerais para telas pequenas (mobile) */
     @media only screen and (max-width: 600px) {
-        /* Reduzir paddings e margens para aproveitar a tela */
         .css-1d391kg { padding-top: 0.5rem !important; }
         .css-1v7tykx { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-        
-        /* Ajustar tamanho das fontes dos gráficos e títulos */
         .stPlotlyChart { margin-bottom: 10px !important; }
         .stTabs [data-baseweb="tab-list"] button { 
             font-size: 0.75rem !important; 
             padding: 0.3rem 0.5rem !important; 
         }
-        
-        /* Ajustar cartões de métricas */
         .stMetric { font-size: 0.8rem !important; }
         .stMetric label { font-size: 0.8rem !important; }
         .stMetric div { font-size: 1.2rem !important; }
-        
-        /* Ajustar inputs e botões */
         .stSelectbox, .stMultiselect, .stSlider, .stTextInput, .stTextArea { font-size: 0.9rem !important; }
-        
-        /* Ajustar a tabela de dados */
         .stDataFrame { font-size: 0.7rem !important; }
         .stDataFrame table { font-size: 0.7rem !important; }
-        
-        /* Ajustar cabeçalhos */
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.2rem !important; }
         h3 { font-size: 1.0rem !important; }
-        
-        /* Ajustar sidebar para não ocupar muita tela quando aberta */
         .css-1wvn5lz { width: 80% !important; }
     }
 </style>
@@ -97,9 +84,9 @@ st.markdown("""
 
 def main():
     """Função principal do dashboard."""
-    # Configuração da página - layout 'centered' e sidebar oculta por padrão
+    # Configuração da página - layout 'wide' para desktop, mantendo responsividade
     st.set_page_config(
-        layout="centered", 
+        layout="wide", 
         page_title="Telecom Speed Monitor",
         initial_sidebar_state="collapsed"
     )
@@ -167,10 +154,10 @@ def main():
     filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
 
     # ------------------------------------------------------------
-    # MÉTRICAS RESUMO (2 colunas – adaptável a todas as telas)
+    # MÉTRICAS RESUMO (4 colunas – melhor para desktop)
     # ------------------------------------------------------------
     st.subheader("📊 Summary")
-    col_metrics = st.columns(2)  # 2 colunas funcionam bem em mobile e desktop
+    col_metrics = st.columns(4)
 
     avg_dl_mbps = filtered['Download'].mean() / 1e6 if not filtered.empty else 0
     avg_ul_mbps = filtered['Upload'].mean() / 1e6 if not filtered.empty else 0
@@ -178,13 +165,15 @@ def main():
 
     with col_metrics[0]:
         st.metric("Total Tests", len(filtered))
-        st.metric("Avg Download", f"{avg_dl_mbps:.3f} Mbps")
     with col_metrics[1]:
+        st.metric("Avg Download", f"{avg_dl_mbps:.3f} Mbps")
+    with col_metrics[2]:
         st.metric("Avg Upload", f"{avg_ul_mbps:.3f} Mbps")
+    with col_metrics[3]:
         st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
     # ------------------------------------------------------------
-    # TABS (Gráficos com `use_container_width=True`)
+    # TABS (Todos os gráficos com `width='stretch'`)
     # ------------------------------------------------------------
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Time Series", "📊 Boxplot", "📉 Scatter",
@@ -199,7 +188,7 @@ def main():
             dtick=300000,
             rangeslider=dict(visible=True, thickness=0.05)
         )
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width='stretch')
 
         fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
                        title='Upload Evolution (bps)')
@@ -208,22 +197,22 @@ def main():
             dtick=300000,
             rangeslider=dict(visible=True, thickness=0.05)
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
 
     with tab2:
         fig3 = px.box(filtered, x='Tool', y='Download', color='Tool',
                       title='Download Distribution by Tool')
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width='stretch')
 
         fig4 = px.box(filtered, x='Tool', y='Ping', color='Tool',
                       title='Ping Distribution by Tool')
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width='stretch')
 
     with tab3:
         fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
                           hover_data=['Timestamp_local', 'Server Name'],
                           title='Ping vs Download (bps)')
-        st.plotly_chart(fig5, use_container_width=True)
+        st.plotly_chart(fig5, width='stretch')
 
     with tab4:
         filtered['DayOfWeek'] = filtered['Timestamp_local'].dt.day_name()
@@ -234,7 +223,7 @@ def main():
 
         fig6 = px.bar(aggr, x='Tool', y='Download_Mbps', color='Period', barmode='group',
                       title='Avg Download (Mbps): Weekday vs Weekend')
-        st.plotly_chart(fig6, use_container_width=True)
+        st.plotly_chart(fig6, width='stretch')
 
     with tab5:
         st.subheader("🌍 Server Locations")
@@ -261,10 +250,10 @@ def main():
                 title='Servers Used for Tests',
                 mapbox_style='open-street-map',
                 zoom=4,
-                height=400  # Altura reduzida para caber melhor em mobile
+                height=400
             )
             fig_map.update_layout(mapbox_style="open-street-map")
-            st.plotly_chart(fig_map, use_container_width=True)
+            st.plotly_chart(fig_map, width='stretch')
         else:
             st.info("No server location data available. Only speedtest-cli and librespeed provide this.")
 
@@ -281,7 +270,7 @@ def main():
                 'Timestamp_local', 'Tool', 'Server Name', 'Ping',
                 'Download', 'Upload', 'Test Type'
             ]].head(100),
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
 
