@@ -62,6 +62,7 @@ def build_table_of_contents(styles: Dict) -> List:
         ("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", 7),
         ("7. RECOMENDAÇÕES", 8),
         ("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", 9),
+        ("8.1 ANÁLISE INTELIGENTE POR DIA E HORÁRIO", 10),
         ("9. RESUMO EXECUTIVO", 11),
     ]
     for texto, pag in itens:
@@ -167,7 +168,7 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
     story = []
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", styles['heading1']))
 
-    # 3.1 Desempenho por dia da semana
+    # 3.1
     story.append(Paragraph("3.1. Desempenho por Dia da Semana (dias com dados disponíveis)", styles['heading2']))
     weekday_median = stats['weekday_median']
     weekdays_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -198,7 +199,7 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
     else:
         story.append(Paragraph("Não há dados suficientes para análise por dia da semana.", styles['body']))
 
-    # 3.2 Comparação Dias Úteis vs. Fins de Semana
+    # 3.2
     story.append(Paragraph("3.2. Comparação Dias Úteis vs. Fins de Semana", styles['heading2']))
     weekend_stats = stats['weekend_stats']
     clean = stats['clean_df']
@@ -242,7 +243,7 @@ def build_statistics(styles: Dict, stats: Dict) -> List:
         story.append(Paragraph("Não há dados suficientes para comparar dias úteis e fins de semana (apenas um dos períodos possui registros).", styles['body']))
     story.append(Spacer(1, 0.3*cm))
 
-    # 3.3 Análise de Throttling (reformulada)
+    # 3.3
     story.append(Paragraph("3.3. Análise de Throttling (Limitação de Velocidade)", styles['heading2']))
     if throttling['detected']:
         throttle_text = f"""
@@ -490,12 +491,9 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
             valid_img_paths.append(path)
 
     if valid_img_paths:
-        # Largura útil da página A4 (21cm - 2*2cm de margem)
         page_width = 17 * cm
         gap = 0.3 * cm
-        # Duas colunas com espaçamento
         img_width = (page_width - gap) / 2
-        # Altura proporcional (mantendo razão ~4:3)
         img_height = img_width * 0.7
 
         def build_table_rows(paths):
@@ -510,7 +508,6 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
                 rows.append(row)
             return rows
 
-        # Dividir em páginas com no máximo 4 imagens (2x2)
         page_size = 4
         for page_start in range(0, len(valid_img_paths), page_size):
             page_paths = valid_img_paths[page_start:page_start+page_size]
@@ -534,6 +531,111 @@ def build_appendix(styles: Dict, comparison_images: list, graph_dir: str) -> Lis
     else:
         story.append(Paragraph("Nenhum gráfico disponível para exibição.", styles['body']))
 
+    story.append(PageBreak())
+    return story
+
+
+def build_smart_analysis(styles: Dict, stats: Dict) -> List:
+    """
+    Cria a página de análise inteligente por dia e horário,
+    com resumo de problemas identificados.
+    """
+    story = []
+    story.append(Paragraph("8.1 ANÁLISE INTELIGENTE POR DIA E HORÁRIO", styles['heading1']))
+    
+    clean = stats['clean_df'].copy()
+    if clean.empty:
+        story.append(Paragraph("Sem dados suficientes para análise.", styles['body']))
+        return story
+    
+    # Preparar dados
+    clean['Hour'] = clean['Timestamp'].dt.hour
+    clean['DayOfWeek'] = clean['Timestamp'].dt.day_name()
+    clean['DayNum'] = clean['DayOfWeek'].map({
+        'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3,
+        'Friday': 4, 'Saturday': 5, 'Sunday': 6
+    })
+    
+    # Calcular médias por dia/hora
+    pivot = clean.pivot_table(index='DayNum', columns='Hour', values='Download_Mbps', aggfunc='mean')
+    pivot = pivot.reindex(index=range(7), columns=range(24))
+    
+    # Identificar períodos com problemas
+    issues = []
+    
+    # 1. Horários com velocidade média < 50% da contratada
+    threshold_50 = stats['plan_download'] * 0.5
+    for day in range(7):
+        for hour in range(24):
+            val = pivot.loc[day, hour]
+            if pd.notna(val) and val < threshold_50:
+                day_name = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][day]
+                issues.append({
+                    'day': day_name,
+                    'hour': hour,
+                    'download': val,
+                    'percent': (val / stats['plan_download']) * 100,
+                    'type': 'slow'
+                })
+    
+    # 2. Horas com variação significativa entre dias úteis e fins de semana
+    weekday_avg = clean[~clean['IsWeekend']].groupby('Hour')['Download_Mbps'].mean()
+    weekend_avg = clean[clean['IsWeekend']].groupby('Hour')['Download_Mbps'].mean()
+    
+    for hour in range(24):
+        if hour in weekday_avg.index and hour in weekend_avg.index:
+            diff_pct = ((weekday_avg[hour] - weekend_avg[hour]) / weekday_avg[hour]) * 100 if weekday_avg[hour] > 0 else 0
+            if diff_pct > 20:
+                issues.append({
+                    'day': 'Fins de semana',
+                    'hour': hour,
+                    'download': weekend_avg[hour],
+                    'percent': diff_pct,
+                    'type': 'throttling_suspect'
+                })
+    
+    # 3. Pior dia da semana
+    day_avg = clean.groupby('DayNum')['Download_Mbps'].mean().reindex(range(7))
+    worst_day_idx = day_avg.idxmin()
+    worst_day = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][worst_day_idx]
+    worst_day_value = day_avg[worst_day_idx]
+    
+    if worst_day_value < stats['plan_download'] * 0.5:
+        issues.append({
+            'day': worst_day,
+            'hour': 'all',
+            'download': worst_day_value,
+            'percent': (worst_day_value / stats['plan_download']) * 100,
+            'type': 'worst_day'
+        })
+    
+    # Adicionar resumo
+    if issues:
+        story.append(Paragraph("### Resumo de Problemas Identificados", styles['heading2']))
+        
+        # Agrupar por tipo
+        slow_issues = [i for i in issues if i['type'] == 'slow']
+        throttle_issues = [i for i in issues if i['type'] == 'throttling_suspect']
+        worst_day_issues = [i for i in issues if i['type'] == 'worst_day']
+        
+        if slow_issues:
+            story.append(Paragraph("**Horários com velocidade abaixo de 50% do contratado:**", styles['body']))
+            unique_slow = list(set([(i['day'], i['hour']) for i in slow_issues]))
+            for day, hour in unique_slow[:20]:
+                story.append(Paragraph(f"• {day} às {hour:02d}:00 - {slow_issues[0]['download']:.1f} Mbps ({slow_issues[0]['percent']:.1f}%)", styles['body']))
+        
+        if throttle_issues:
+            story.append(Paragraph("**Possíveis horários de throttling (diferença > 20% entre dias úteis e fins de semana):**", styles['body']))
+            for issue in throttle_issues[:20]:
+                story.append(Paragraph(f"• {issue['day']} às {issue['hour']:02d}:00 - Redução de {issue['percent']:.1f}%", styles['body']))
+        
+        if worst_day_issues:
+            story.append(Paragraph(f"**Pior dia da semana:** {worst_day} com média de {worst_day_value:.1f} Mbps ({worst_day_value / stats['plan_download'] * 100:.1f}% da contratada)", styles['body']))
+        
+        story.append(Paragraph("**Conclusão:** A análise identifica padrões de degradação de velocidade em horários específicos, que podem indicar problemas de infraestrutura do provedor ou práticas de gerenciamento de tráfego (throttling). Recomenda-se investigar esses períodos junto ao provedor.", styles['body']))
+    else:
+        story.append(Paragraph("**Conclusão:** A análise não identificou padrões significativos de degradação de velocidade ou throttling nos dados disponíveis.", styles['body']))
+    
     story.append(PageBreak())
     return story
 

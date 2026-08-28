@@ -11,7 +11,8 @@ from .sections import (
     build_cover_page, build_table_of_contents, build_objective,
     build_methodology, build_statistics, build_contracted_speed,
     build_financial_loss, build_legal_foundation, build_recommendations,
-    build_appendix, build_executive_summary
+    build_appendix, build_executive_summary,
+    build_smart_analysis  # <-- Adicionado
 )
 import pandas as pd
 
@@ -83,6 +84,9 @@ def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
 
     # Anexos
     story.extend(build_appendix(styles, comparison_images, graph_dir))
+
+    # Análise inteligente (NOVA SEÇÃO)
+    story.extend(build_smart_analysis(styles, stats))
 
     # Resumo executivo (já contém as assinaturas)
     story.extend(build_executive_summary(styles, stats, address))

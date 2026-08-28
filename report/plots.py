@@ -6,7 +6,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from typing import List, Tuple
-from scipy import stats as scipy_stats  # adicionado para Mann-Whitney
+from scipy import stats as scipy_stats
 
 
 def generate_comparison_plots(df_speed: pd.DataFrame, df_librespeed: pd.DataFrame,
@@ -149,31 +149,23 @@ def generate_comparison_plots(df_speed: pd.DataFrame, df_librespeed: pd.DataFram
     images.append(fname)
 
     # 8. BOXPLOT DIAS ÚTEIS VS FINS DE SEMANA (MANN-WHITNEY)
-    # Verificar se a coluna IsWeekend existe
     if 'IsWeekend' in combined.columns:
         weekday_data = combined[~combined['IsWeekend']]['Download_Mbps'].dropna()
         weekend_data = combined[combined['IsWeekend']]['Download_Mbps'].dropna()
         if len(weekday_data) >= 10 and len(weekend_data) >= 10:
-            # Teste Mann-Whitney U
             _, p_value = scipy_stats.mannwhitneyu(weekday_data, weekend_data, alternative='two-sided')
             med_wk = weekday_data.median()
             med_we = weekend_data.median()
             reducao = ((med_wk - med_we) / med_wk) * 100 if med_wk > 0 else 0
 
             fig, ax = plt.subplots(figsize=(8, 6))
-            # Dados para plot
-            plot_data = [
-                weekday_data,
-                weekend_data
-            ]
+            plot_data = [weekday_data, weekend_data]
             bp = ax.boxplot(plot_data, patch_artist=True, widths=0.5)
-            # Personalizar cores
             bp['boxes'][0].set_facecolor('#3498db')
             bp['boxes'][1].set_facecolor('#e74c3c')
             ax.set_xticklabels(['Dias úteis', 'Fins de semana'])
             ax.set_ylabel('Download (Mbps)')
             ax.set_title(f'Mann-Whitney U (p = {p_value:.4f})\nRedução: {reducao:.1f}%')
-            # Linhas de mediana
             ax.axhline(med_wk, color='blue', linestyle='--', alpha=0.5, linewidth=1)
             ax.axhline(med_we, color='red', linestyle='--', alpha=0.5, linewidth=1)
             plt.tight_layout()
@@ -181,5 +173,44 @@ def generate_comparison_plots(df_speed: pd.DataFrame, df_librespeed: pd.DataFram
             plt.savefig(os.path.join(output_dir, fname_mw), dpi=200)
             plt.close()
             images.append(fname_mw)
+
+    # 9. HEATMAP: DOWNLOAD MÉDIO POR DIA DA SEMANA E HORA
+    if 'IsWeekend' in combined.columns:
+        combined['Hour'] = combined['Timestamp'].dt.hour
+        combined['DayOfWeek'] = combined['Timestamp'].dt.day_name()
+        
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        combined['DayNum'] = combined['DayOfWeek'].map({day: i for i, day in enumerate(day_order)})
+        
+        pivot = combined.pivot_table(index='DayNum', columns='Hour', values='Download_Mbps', aggfunc='mean')
+        pivot = pivot.reindex(index=range(7), columns=range(24))
+        
+        fig, ax = plt.subplots(figsize=(14, 8))
+        sns.heatmap(pivot, cmap='YlOrRd', ax=ax, cbar_kws={'label': 'Download Médio (Mbps)'})
+        ax.set_yticklabels(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'])
+        ax.set_xlabel('Hora do Dia')
+        ax.set_ylabel('Dia da Semana')
+        ax.set_title('Heatmap: Download Médio por Dia da Semana e Hora')
+        plt.tight_layout()
+        fname_heatmap = 'heatmap_dia_hora.png'
+        plt.savefig(os.path.join(output_dir, fname_heatmap), dpi=200)
+        plt.close()
+        images.append(fname_heatmap)
+        
+        # 10. HEATMAP DE UPLOAD MÉDIO
+        pivot_upload = combined.pivot_table(index='DayNum', columns='Hour', values='Upload_Mbps', aggfunc='mean')
+        pivot_upload = pivot_upload.reindex(index=range(7), columns=range(24))
+        
+        fig, ax = plt.subplots(figsize=(14, 8))
+        sns.heatmap(pivot_upload, cmap='YlGnBu', ax=ax, cbar_kws={'label': 'Upload Médio (Mbps)'})
+        ax.set_yticklabels(['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'])
+        ax.set_xlabel('Hora do Dia')
+        ax.set_ylabel('Dia da Semana')
+        ax.set_title('Heatmap: Upload Médio por Dia da Semana e Hora')
+        plt.tight_layout()
+        fname_heatmap_ul = 'heatmap_upload_dia_hora.png'
+        plt.savefig(os.path.join(output_dir, fname_heatmap_ul), dpi=200)
+        plt.close()
+        images.append(fname_heatmap_ul)
 
     return images
