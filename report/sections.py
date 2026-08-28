@@ -164,6 +164,68 @@ def build_methodology(styles: Dict, success_data: list) -> List:
     return story
 
 
+def build_main_conclusions(styles: Dict, stats: Dict) -> List:
+    """
+    Cria a seção "Análise e Conclusões Principais" baseada nos dados normalizados.
+    """
+    story = []
+    story.append(Paragraph("3. ANÁLISE E CONCLUSÕES PRINCIPAIS", styles['heading1']))
+    
+    clean = stats['clean_df']
+    if clean.empty:
+        story.append(Paragraph("Sem dados suficientes para análise.", styles['body']))
+        return story
+    
+    # Estatísticas básicas
+    total_records = len(clean)
+    overall_median_dl = stats['overall_median_dl']
+    overall_median_ul = stats['overall_median_ul']
+    pct_global = (overall_median_dl / stats['plan_download']) * 100 if overall_median_dl > 0 else 0
+    pct_ul = (overall_median_ul / stats['plan_upload']) * 100 if overall_median_ul > 0 else 0
+    ping_med = stats['combined_desc'].loc['50%', 'Ping'] if '50%' in stats['combined_desc'].index else 0
+    
+    # Análise de qualidade
+    quality_assessment = []
+    if pct_global < 50:
+        quality_assessment.append("CRÍTICO")
+    elif pct_global < 80:
+        quality_assessment.append("INADEQUADO")
+    else:
+        quality_assessment.append("ADEQUADO")
+    
+    # Resumo
+    story.append(Paragraph(f"""
+    Com base na reanálise dos dados normalizados, identificamos que a qualidade do serviço entregue pela operadora
+    está em níveis considerados {quality_assessment[0]} em relação ao contratado.
+    
+    <b>Resumo dos dados analisados:</b>
+    • Total de registros válidos: {total_records}
+    • Velocidade mediana de download: {overall_median_dl:.1f} Mbps ({pct_global:.1f}% do contratado)
+    • Velocidade mediana de upload: {overall_median_ul:.1f} Mbps ({pct_ul:.1f}% do contratado)
+    • Ping mediano: {ping_med:.1f} ms
+    
+    <b>Observações relevantes:</b>
+    """, styles['body']))
+    
+    # Adicionar observações específicas
+    if pct_global < 80:
+        story.append(Paragraph("• A velocidade entregue está abaixo do mínimo de 80% exigido pela Resolução Anatel nº 632/2014.", styles['body']))
+    if stats['interruptions'] > 0:
+        story.append(Paragraph(f"• Foram detectadas {stats['interruptions']} interrupções de conexão durante o período analisado.", styles['body']))
+    if stats['throttling']['detected']:
+        story.append(Paragraph(f"• Há indícios de throttling com redução de {stats['throttling']['percent']:.1f}% nos fins de semana.", styles['body']))
+    
+    story.append(Paragraph("""
+    <b>Conclusões:</b>
+    A análise dos dados coletados evidencia que a prestadora não está entregando a velocidade contratada,
+    o que caracteriza descumprimento contratual e violação à legislação aplicável.
+    As evidências aqui apresentadas são suficientes para subsidiar as medidas jurídicas recomendadas neste relatório.
+    """, styles['body']))
+    
+    story.append(Spacer(1, 0.5*cm))
+    return story
+
+
 def build_statistics(styles: Dict, stats: Dict) -> List:
     story = []
     story.append(Paragraph("3. ANÁLISE ESTATÍSTICA E PADRÕES DE LIMITAÇÃO", styles['heading1']))

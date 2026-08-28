@@ -9,6 +9,37 @@ from .pdf_builder import build_pdf
 from .formatters import data_extenso
 
 
+def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza os dados para bps (converte Mbps para bps se necessário).
+    
+    Args:
+        df: DataFrame bruto.
+        
+    Returns:
+        DataFrame normalizado.
+    """
+    df = df.copy()
+    
+    def to_bps(value, tool):
+        if pd.isna(value) or value <= 0:
+            return 0
+        # Se a ferramenta é librespeed e o valor é < 100000, provavelmente está em Mbps
+        if tool == 'librespeed' and value < 100000:
+            return value * 1e6
+        # Se qualquer ferramenta tem valor < 1000, assume Mbps
+        elif value < 1000:
+            return value * 1e6
+        return value
+    
+    if 'Download' in df.columns:
+        df['Download'] = df.apply(lambda row: to_bps(row['Download'], row.get('Tool', '')), axis=1)
+    if 'Upload' in df.columns:
+        df['Upload'] = df.apply(lambda row: to_bps(row['Upload'], row.get('Tool', '')), axis=1)
+    
+    return df
+
+
 def generate_report_from_dataframe(
     df_orig, client_name, isp_name, plan_name,
     attorney_name="", address="", bill_path=None,
@@ -18,7 +49,9 @@ def generate_report_from_dataframe(
     """Gera um relatório PDF a partir de um DataFrame de dados de teste."""
     address = address.replace("Brazil", "Brasil")
 
-    df = df_orig.copy()
+    # Normalizar unidades
+    df = normalize_data(df_orig)
+    
     if 'Timestamp' in df.columns:
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
     else:
