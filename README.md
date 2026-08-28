@@ -437,9 +437,8 @@ RUN go install github.com/librespeed/speedtest-cli@latest
 # Estágio 2: imagem final
 FROM python:3.11-slim
 
-# Cria usuário não-root (UID 1026, GID 100)
-RUN groupadd -g 100 appuser && \
-    useradd -m -u 1026 -g appuser appuser
+# Usa o grupo 'users' existente (GID 100) e cria o usuário com UID 1026
+RUN useradd -m -u 1026 -g users appuser
 
 # Instala dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -471,7 +470,7 @@ WORKDIR /app
 COPY collector/ ./collector/
 COPY scripts/ ./scripts/
 
-RUN mkdir -p /app && chown -R appuser:appuser /app
+RUN mkdir -p /app && chown -R appuser:users /app
 USER appuser
 
 CMD ["python", "-m", "collector.main"]
@@ -484,9 +483,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cria usuário não-root (UID 1026, GID 100)
-RUN groupadd -g 100 appuser && \
-    useradd -m -u 1026 -g appuser appuser
+# Usa o grupo 'users' existente (GID 100) e cria o usuário com UID 1026
+RUN useradd -m -u 1026 -g users appuser
 
 # Instala dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
