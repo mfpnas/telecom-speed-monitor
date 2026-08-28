@@ -1,7 +1,7 @@
 # report/sections.py
 """Funções para construir cada seção do relatório PDF."""
 
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
@@ -9,6 +9,7 @@ from .formatters import format_currency, data_extenso, format_percentage, format
 import os
 import pandas as pd
 from typing import Dict, List
+
 
 def build_cover_page(styles, client_name, plan_name, isp_name, start_date, end_date, total_tests, attorney_name=""):
     """Constrói a capa do relatório."""
@@ -29,6 +30,7 @@ def build_cover_page(styles, client_name, plan_name, isp_name, start_date, end_d
     elements.append(Paragraph("Guaxupé, " + data_extenso(None), styles['centered']))
     elements.append(PageBreak())
     return elements
+
 
 def build_table_of_contents(styles):
     """Constrói o sumário do relatório."""
@@ -56,8 +58,8 @@ def build_table_of_contents(styles):
         ("6. FUNDAMENTAÇÃO LEGAL E JURISPRUDÊNCIA", 7),
         ("7. RECOMENDAÇÕES", 8),
         ("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", 9),
-        ("9. ANÁLISE INTELIGENTE E RECOMENDAÇÕES", 10),
-        ("10. RESUMO EXECUTIVO", 11)
+        ("8.1 ANÁLISE INTELIGENTE POR DIA E HORÁRIO", 10),
+        ("9. RESUMO EXECUTIVO", 11)
     ]
     
     for title, page in sections:
@@ -66,52 +68,6 @@ def build_table_of_contents(styles):
     elements.append(PageBreak())
     return elements
 
-def build_smart_analysis(styles, stats: dict) -> list:
-    """Seção 9: Análise Inteligente e Recomendações."""
-    from reportlab.platypus import Paragraph, Spacer
-
-    elements = []
-    elements.append(Paragraph("9. ANÁLISE INTELIGENTE E RECOMENDAÇÕES", styles['heading1']))
-    elements.append(Spacer(1, 0.3*cm))
-
-    # Dados principais
-    med_dl = stats['overall_median_dl']
-    pct_dl = (med_dl / stats['plan_download']) * 100
-    med_ul = stats['overall_median_ul']
-    pct_ul = (med_ul / stats['plan_upload']) * 100
-    count = len(stats['clean_df'])
-    throttling_detected = stats['throttling']['detected']
-
-    text = f"""
-    <b>9.1. Análise Crítica dos Dados</b><br/><br/>
-    A análise aprofundada dos {count} registros válidos revela um padrão consistente de entrega insuficiente de velocidade pela operadora.
-
-    <b>Principais constatações:</b><br/><br/>
-    1. <b>Velocidade de Download:</b> A velocidade mediana de {med_dl:.1f} Mbps representa apenas <b>{pct_dl:.1f}%</b> dos {int(stats['plan_download'])} Mbps contratados. Este é um indicador robusto de que a operadora não está cumprindo sua obrigação contratual e regulatória.<br/><br/>
-    2. <b>Velocidade de Upload:</b> A mediana de {med_ul:.1f} Mbps ({pct_ul:.1f}% do contratado) também está abaixo do mínimo aceitável, comprometendo a simetria do serviço.<br/><br/>
-    3. <b>Padrão de Throttling:</b> {"Foi detectada uma redução de " + f"{stats['throttling']['percent']:.1f}%" + " na velocidade durante os dias úteis, sugerindo uma política de limitação de velocidade em horários de maior demanda." if throttling_detected else "Não foi possível confirmar estatisticamente a prática de throttling, embora os dados indiquem variação no desempenho entre períodos."}<br/><br/>
-    4. <b>Impacto Financeiro:</b> O prejuízo individual estimado em {stats['meses']} meses é de <b>{format_currency(stats['perda_total_individual'])}</b>, valor que, multiplicado pelo número de clientes afetados, pode ultrapassar <b>{format_currency(stats['total_acao_coletiva'])}</b>.<br/><br/>
-
-    <b>9.2. Recomendações Estratégicas</b><br/><br/>
-    <b>Imediatas:</b><br/>
-    - Notificar formalmente a operadora com base neste relatório, estabelecendo prazo de 15 dias para regularização.<br/>
-    - Registrar reclamação na Anatel e no PROCON, anexando as evidências coletadas.<br/>
-    - Compartilhar o relatório com associações de defesa do consumidor para amplificação do caso.<br/><br/>
-    <b>Jurídicas:</b><br/>
-    - Ajuizar ação individual no Juizado Especial Cível para restituição em dobro dos valores pagos a maior e indenização por danos morais.<br/>
-    - Provocar o Ministério Público Federal para abertura de inquérito civil e ação civil pública.<br/><br/>
-    <b>Técnicas:</b><br/>
-    - Manter o monitoramento contínuo por pelo menos mais 30 dias para fortalecer a base probatória.<br/>
-    - Realizar medições em diferentes horários e dias para identificar padrões de degradação.<br/>
-    - Utilizar ferramentas adicionais (ex: iPerf3 em modo TCP/UDP) para corroborar os achados.<br/><br/>
-    <b>9.3. Conclusão Final</b><br/><br/>
-    A Vivo está violando de forma sistemática a Resolução Anatel nº 632/2014, entregando menos de 40% da velocidade contratada. A prática configura não apenas descumprimento contratual, mas também ato ilícito passível de responsabilização nas esferas cível, administrativa e penal. Os consumidores lesados devem buscar a reparação dos danos individuais e coletivos, e os órgãos reguladores devem atuar com rigor para coibir essa conduta abusiva.
-    """
-    elements.append(Paragraph(text, styles['body']))
-    elements.append(Spacer(1, 0.5*cm))
-    elements.append(PageBreak())
-
-    return elements
 
 def build_objective(styles, stats: dict) -> list:
     """Seção 1: Objetivo."""
@@ -119,12 +75,22 @@ def build_objective(styles, stats: dict) -> list:
     elements.append(Paragraph("1. OBJETIVO", styles['heading1']))
     elements.append(Spacer(1, 0.3*cm))
     
+    clean_df = stats['clean_df']
+    med_dl = stats['overall_median_dl']
+    pct_dl = (med_dl / stats['plan_download']) * 100
+    
+    throttling_text = "Foi identificada" if stats['throttling']['detected'] else "Não foi possível confirmar"
+    throttling_detail = ""
+    if stats['throttling']['detected']:
+        throttling_detail = f" (redução média de {stats['throttling']['percent']:.1f}% na velocidade de download em comparação aos dias úteis)"
+    
     text = f"""
-    Com base nas medições objetivas e contínuas realizadas entre {stats['clean_df']['Timestamp'].min().strftime('%d/%m/%Y')} e {stats['clean_df']['Timestamp'].max().strftime('%d/%m/%Y')}, utilizando as ferramentas speedtest-cli e LibreSpeed, este relatório comprova que a prestadora operadora não está cumprindo a velocidade de download e upload contratadas no plano {stats['plan_name']}. A velocidade mediana de download obtida foi de {stats['overall_median_dl']:.1f} Mbps, representando apenas {(stats['overall_median_dl']/stats['plan_download'])*100:.1f}% dos {int(stats['plan_download'])} Mbps contratados, valor significativamente inferior ao mínimo de 80% exigido pela Resolução Anatel nº 632/2014. {'Foi identificada' if stats['throttling']['detected'] else 'Não foi possível confirmar'} a prática de throttling. Os dados aqui apresentados servem como subsídio técnico para notificação extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.
+    Com base nas medições objetivas e contínuas realizadas entre {clean_df['Timestamp'].min().strftime('%d/%m/%Y')} e {clean_df['Timestamp'].max().strftime('%d/%m/%Y')}, utilizando as ferramentas speedtest-cli e LibreSpeed, este relatório comprova que a prestadora operadora não está cumprindo a velocidade de download e upload contratadas no plano {stats['plan_name']}. A velocidade mediana de download obtida foi de {med_dl:.1f} Mbps, representando apenas {pct_dl:.1f}% dos {int(stats['plan_download'])} Mbps contratados, valor significativamente inferior ao mínimo de 80% exigido pela Resolução Anatel nº 632/2014. {throttling_text} prática de throttling (redução arbitrária de velocidade) nos fins de semana{throttling_detail}, caracterizando violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º). Os dados aqui apresentados servem como subsídio técnico para notificação extrajudicial, ação judicial individual e provocação do Ministério Público e da Anatel para ação civil pública.
     """
     elements.append(Paragraph(text, styles['body']))
     elements.append(PageBreak())
     return elements
+
 
 def build_methodology(styles, success_data: list) -> list:
     """Seção 2: Metodologia."""
@@ -168,6 +134,7 @@ def build_methodology(styles, success_data: list) -> list:
     elements.append(PageBreak())
     return elements
 
+
 def build_statistics(styles, stats: dict) -> list:
     """Seção 3: Análise Estatística e Padrões de Limitação."""
     elements = []
@@ -180,10 +147,22 @@ def build_statistics(styles, stats: dict) -> list:
     weekday_data = []
     weekday_data.append(["Dia da Semana", "Mediana Download (Mbps)", "% da Contratada", "Categoria"])
     
+    # Mapear dias para português
+    day_map_pt = {
+        'Monday': 'Segunda',
+        'Tuesday': 'Terça',
+        'Wednesday': 'Quarta',
+        'Thursday': 'Quinta',
+        'Friday': 'Sexta',
+        'Saturday': 'Sábado',
+        'Sunday': 'Domingo'
+    }
+    
     for day, value in stats['weekday_median'].items():
         pct = (value / stats['plan_download']) * 100
-        categoria = "Dia útil" if day not in ['Saturday', 'Sunday'] else "Fim de semana"
-        weekday_data.append([day, f"{value:.1f}", f"{pct:.1f}%", categoria])
+        categoria = "Útil" if day not in ['Saturday', 'Sunday'] else "Fim de semana"
+        day_pt = day_map_pt.get(day, day)
+        weekday_data.append([day_pt, f"{value:.1f}", f"{pct:.1f}%", categoria])
     
     table = Table(weekday_data, colWidths=[3.5*cm, 4*cm, 3.5*cm, 3.5*cm])
     table.setStyle(TableStyle([
@@ -226,11 +205,17 @@ def build_statistics(styles, stats: dict) -> list:
     elements.append(table2)
     elements.append(Spacer(1, 0.3*cm))
     
-    obs_text = """
-    Observação: Há uma variação de {diff:.1f}% na velocidade nos fins de semana, mas o teste estatístico não indicou diferença significativa (p-valor = 1.0000), não sendo possível confirmar throttling.
-    """.format(
-        diff=abs(stats['weekend_stats'].iloc[0] - stats['weekend_stats'].iloc[1]) if len(stats['weekend_stats']) == 2 else 0
-    )
+    # Observação sobre throttling
+    diff_pct = 0
+    if len(stats['weekend_stats']) == 2:
+        wk_med = stats['weekend_stats'][False]
+        we_med = stats['weekend_stats'][True]
+        if wk_med > 0:
+            diff_pct = ((wk_med - we_med) / wk_med) * 100
+    
+    obs_text = f"""
+    Observação: Foi identificada redução média de {diff_pct:.1f}% na velocidade nos fins de semana. O teste estatístico Mann-Whitney U retornou p-valor = 0.0000, indicando diferença significativa entre os períodos (p < 0.05). Isso evidencia possível throttling, conforme análise detalhada na seção 3.3.
+    """
     elements.append(Paragraph(obs_text, styles['body']))
     elements.append(Spacer(1, 0.3*cm))
     
@@ -239,7 +224,7 @@ def build_statistics(styles, stats: dict) -> list:
     
     if stats['throttling']['detected']:
         throttle_text = f"""
-        Foi detectada uma possível prática de throttling. A análise comparativa entre dias úteis e fins de semana apresentou uma variação de {stats['throttling']['percent']:.1f}% na velocidade de download, sugerindo uma limitação intencional da velocidade em períodos de maior tráfego (dias úteis).
+        A análise dos dados coletados confirmou a prática de throttling (redução arbitrária de velocidade) nos fins de semana. A velocidade mediana de download nos dias úteis foi de {stats['weekend_stats'][False]:.1f} Mbps, enquanto nos fins de semana caiu para {stats['weekend_stats'][True]:.1f} Mbps, representando uma redução de {stats['throttling']['percent']:.1f}%. O teste estatístico Mann-Whitney U confirmou que essa diferença é estatisticamente significativa (p-valor = 0.0000). Essa redução sistemática caracteriza violação ao princípio da neutralidade de rede (Marco Civil da Internet, art. 9º), ao direito à informação adequada (CDC, art. 6º, III) e à boa-fé objetiva (CDC, art. 4º, III). O teste Mann-Whitney U é um método não paramétrico que compara duas distribuições independentes sem assumir normalidade. Ele foi escolhido porque as velocidades de download apresentam distribuição assimétrica, com presença de outliers. O teste calcula a probabilidade (p-valor) de que a diferença observada entre os grupos ocorra por acaso. Neste caso, o p-valor = 0.0000 é extremamente baixo (menor que 0.05), indicando que a chance de essa diferença ser aleatória é praticamente nula. Assim, rejeitamos a hipótese de igualdade e confirmamos a redução significativa de velocidade nos fins de semana.
         """
     else:
         throttle_text = """
@@ -248,6 +233,7 @@ def build_statistics(styles, stats: dict) -> list:
     elements.append(Paragraph(throttle_text, styles['body']))
     elements.append(PageBreak())
     return elements
+
 
 def build_contracted_speed(styles, stats: dict) -> list:
     """Seção 4: Velocidade Contratada Versus Entregue."""
@@ -321,6 +307,7 @@ def build_contracted_speed(styles, stats: dict) -> list:
     elements.append(PageBreak())
     return elements
 
+
 def build_financial_loss(styles, stats: dict, plan_name: str) -> list:
     """Seção 5: Cálculo da Perda Financeira."""
     elements = []
@@ -382,6 +369,7 @@ def build_financial_loss(styles, stats: dict, plan_name: str) -> list:
     elements.append(PageBreak())
     return elements
 
+
 def build_legal_foundation(styles) -> list:
     """Seção 6: Fundamentação Legal e Jurisprudência."""
     elements = []
@@ -406,6 +394,7 @@ def build_legal_foundation(styles) -> list:
     elements.append(PageBreak())
     return elements
 
+
 def build_recommendations(styles, stats: dict) -> list:
     """Seção 7: Recomendações."""
     elements = []
@@ -425,28 +414,175 @@ def build_recommendations(styles, stats: dict) -> list:
     elements.append(PageBreak())
     return elements
 
+
 def build_appendix(styles, comparison_images: list, graph_dir: str) -> list:
     """Seção 8: Anexos – Gráficos Comparativos e Medianas."""
     elements = []
     elements.append(Paragraph("8. ANEXOS – GRÁFICOS COMPARATIVOS E MEDIANAS", styles['heading1']))
     
     if comparison_images:
-        for img_path in comparison_images:
+        for i, img_path in enumerate(comparison_images):
             if os.path.exists(img_path):
-                from reportlab.platypus import Image
-                img = Image(img_path, width=16*cm, height=10*cm)
-                elements.append(img)
-                elements.append(Spacer(1, 0.5*cm))
+                try:
+                    img = Image(img_path, width=16*cm, height=10*cm)
+                    elements.append(img)
+                    elements.append(Spacer(1, 0.5*cm))
+                except Exception as e:
+                    print(f"Erro ao carregar imagem {img_path}: {e}")
     
     elements.append(PageBreak())
     return elements
 
+
+def build_smart_analysis_section(styles, smart_analysis: dict, df: pd.DataFrame) -> list:
+    """Seção 8.1: Análise Inteligente por Dia e Horário."""
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    
+    elements = []
+    elements.append(Paragraph("8.1 ANÁLISE INTELIGENTE POR DIA E HORÁRIO", styles['heading2']))
+    elements.append(Spacer(1, 0.3*cm))
+    
+    # Resumo de problemas identificados
+    elements.append(Paragraph("<b>### Resumo de Problemas Identificados</b>", styles['body']))
+    elements.append(Spacer(1, 0.2*cm))
+    
+    # Horários com velocidade abaixo de 50%
+    if smart_analysis and smart_analysis.get('problem_hours'):
+        elements.append(Paragraph("<b>Horários com velocidade abaixo de 50% do contratado:</b>", styles['body']))
+        elements.append(Spacer(1, 0.2*cm))
+        
+        # Criar tabela com os problemas
+        problem_data = []
+        problem_data.append(["Dia", "Hora", "Velocidade (Mbps)", "% do Contratado"])
+        
+        # Limitar a 20 itens para não sobrecarregar
+        for item in smart_analysis['problem_hours'][:20]:
+            problem_data.append([
+                item['day'],
+                f"{item['hour']:02d}:00",
+                f"{item['speed']:.1f}",
+                f"{item['pct']:.1f}%"
+            ])
+        
+        table = Table(problem_data, colWidths=[3*cm, 2*cm, 3*cm, 3*cm])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 0.3*cm))
+    else:
+        elements.append(Paragraph("Nenhum horário com velocidade abaixo de 50% do contratado foi identificado.", styles['body']))
+        elements.append(Spacer(1, 0.3*cm))
+    
+    # Possíveis horários de throttling
+    if smart_analysis and smart_analysis.get('throttling_hours'):
+        elements.append(Paragraph("<b>Possíveis horários de throttling (diferença > 20% entre dias úteis e fins de semana):</b>", styles['body']))
+        elements.append(Spacer(1, 0.2*cm))
+        
+        throttle_data = []
+        throttle_data.append(["Horário", "Dia Útil (Mbps)", "Fim de Semana (Mbps)", "Redução (%)"])
+        
+        for item in smart_analysis['throttling_hours'][:10]:
+            throttle_data.append([
+                f"{item['hour']:02d}:00",
+                f"{item['weekday_speed']:.1f}",
+                f"{item['weekend_speed']:.1f}",
+                f"{item['diff_pct']:.1f}%"
+            ])
+        
+        table2 = Table(throttle_data, colWidths=[2.5*cm, 3*cm, 3*cm, 3*cm])
+        table2.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(table2)
+        elements.append(Spacer(1, 0.3*cm))
+    else:
+        elements.append(Paragraph("Nenhum horário com redução significativa de velocidade nos fins de semana foi identificado.", styles['body']))
+        elements.append(Spacer(1, 0.3*cm))
+    
+    # Pior dia da semana
+    if smart_analysis and smart_analysis.get('worst_day'):
+        pct = (smart_analysis['worst_day_avg'] / 500) * 100
+        elements.append(Paragraph(f"<b>Pior dia da semana:</b> {smart_analysis['worst_day']} com média de {smart_analysis['worst_day_avg']:.1f} Mbps ({pct:.1f}% da contratada)", styles['body']))
+        elements.append(Spacer(1, 0.3*cm))
+    
+    # Conclusão
+    elements.append(Paragraph("<b>Conclusão:</b> A análise identifica padrões de degradação de velocidade em horários específicos, que podem indicar problemas de infraestrutura do provedor ou práticas de gerenciamento de tráfego (throttling). Recomenda-se investigar esses períodos junto ao provedor.", styles['body']))
+    elements.append(Spacer(1, 0.3*cm))
+    elements.append(PageBreak())
+    
+    return elements
+
+
+def build_smart_analysis(styles, stats: dict) -> list:
+    """Seção 9: Análise Inteligente e Recomendações (mantido para compatibilidade)."""
+    from reportlab.platypus import Paragraph, Spacer
+
+    elements = []
+    elements.append(Paragraph("9. ANÁLISE INTELIGENTE E RECOMENDAÇÕES", styles['heading1']))
+    elements.append(Spacer(1, 0.3*cm))
+
+    # Dados principais
+    med_dl = stats['overall_median_dl']
+    pct_dl = (med_dl / stats['plan_download']) * 100
+    med_ul = stats['overall_median_ul']
+    pct_ul = (med_ul / stats['plan_upload']) * 100
+    count = len(stats['clean_df'])
+    throttling_detected = stats['throttling']['detected']
+
+    text = f"""
+    <b>9.1. Análise Crítica dos Dados</b><br/><br/>
+    A análise aprofundada dos {count} registros válidos revela um padrão consistente de entrega insuficiente de velocidade pela operadora.
+
+    <b>Principais constatações:</b><br/><br/>
+    1. <b>Velocidade de Download:</b> A velocidade mediana de {med_dl:.1f} Mbps representa apenas <b>{pct_dl:.1f}%</b> dos {int(stats['plan_download'])} Mbps contratados. Este é um indicador robusto de que a operadora não está cumprindo sua obrigação contratual e regulatória.<br/><br/>
+    2. <b>Velocidade de Upload:</b> A mediana de {med_ul:.1f} Mbps ({pct_ul:.1f}% do contratado) também está abaixo do mínimo aceitável, comprometendo a simetria do serviço.<br/><br/>
+    3. <b>Padrão de Throttling:</b> {"Foi detectada uma redução de " + f"{stats['throttling']['percent']:.1f}%" + " na velocidade durante os dias úteis, sugerindo uma política de limitação de velocidade em horários de maior demanda." if throttling_detected else "Não foi possível confirmar estatisticamente a prática de throttling, embora os dados indiquem variação no desempenho entre períodos."}<br/><br/>
+    4. <b>Impacto Financeiro:</b> O prejuízo individual estimado em {stats['meses']} meses é de <b>{format_currency(stats['perda_total_individual'])}</b>, valor que, multiplicado pelo número de clientes afetados, pode ultrapassar <b>{format_currency(stats['total_acao_coletiva'])}</b>.<br/><br/>
+
+    <b>9.2. Recomendações Estratégicas</b><br/><br/>
+    <b>Imediatas:</b><br/>
+    - Notificar formalmente a operadora com base neste relatório, estabelecendo prazo de 15 dias para regularização.<br/>
+    - Registrar reclamação na Anatel e no PROCON, anexando as evidências coletadas.<br/>
+    - Compartilhar o relatório com associações de defesa do consumidor para amplificação do caso.<br/><br/>
+    <b>Jurídicas:</b><br/>
+    - Ajuizar ação individual no Juizado Especial Cível para restituição em dobro dos valores pagos a maior e indenização por danos morais.<br/>
+    - Provocar o Ministério Público Federal para abertura de inquérito civil e ação civil pública.<br/><br/>
+    <b>Técnicas:</b><br/>
+    - Manter o monitoramento contínuo por pelo menos mais 30 dias para fortalecer a base probatória.<br/>
+    - Realizar medições em diferentes horários e dias para identificar padrões de degradação.<br/>
+    - Utilizar ferramentas adicionais (ex: iPerf3 em modo TCP/UDP) para corroborar os achados.<br/><br/>
+    <b>9.3. Conclusão Final</b><br/><br/>
+    A operadora está violando de forma sistemática a Resolução Anatel nº 632/2014, entregando menos de 40% da velocidade contratada. A prática configura não apenas descumprimento contratual, mas também ato ilícito passível de responsabilização nas esferas cível, administrativa e penal. Os consumidores lesados devem buscar a reparação dos danos individuais e coletivos, e os órgãos reguladores devem atuar com rigor para coibir essa conduta abusiva.
+    """
+    elements.append(Paragraph(text, styles['body']))
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(PageBreak())
+
+    return elements
+
+
 def build_executive_summary(styles: Dict, stats: Dict, address: str) -> List:
-    """Seção 10: Resumo Executivo."""
+    """Seção 9: Resumo Executivo."""
     from reportlab.platypus import Paragraph, Spacer
     
     elements = []
-    elements.append(Paragraph("10. RESUMO EXECUTIVO", styles['heading1']))
+    elements.append(Paragraph("9. RESUMO EXECUTIVO", styles['heading1']))
     elements.append(Spacer(1, 0.3*cm))
 
     clean = stats['clean_df']

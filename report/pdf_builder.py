@@ -12,7 +12,7 @@ from .sections import (
     build_methodology, build_statistics, build_contracted_speed,
     build_financial_loss, build_legal_foundation, build_recommendations,
     build_appendix, build_executive_summary,
-    build_smart_analysis
+    build_smart_analysis, build_smart_analysis_section
 )
 import pandas as pd
 
@@ -41,7 +41,8 @@ def build_styles():
 
 def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
               isp_name: str, attorney_name: str, address: str, bill_path: str = None,
-              success_data: list = None, comparison_images: list = None, graph_dir: str = None):
+              success_data: list = None, comparison_images: list = None, 
+              graph_dir: str = None, smart_analysis: dict = None):
     """Constrói o documento PDF completo."""
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             rightMargin=2*cm, leftMargin=2*cm,
@@ -82,10 +83,14 @@ def build_pdf(output_path: str, stats: dict, client_name: str, plan_name: str,
     # Recomendações
     story.extend(build_recommendations(styles, stats))
 
-    # Anexos
+    # Anexos - Gráficos
     story.extend(build_appendix(styles, comparison_images, graph_dir))
+    
+    # Anexos - Análise Inteligente (8.1)
+    if smart_analysis and stats['clean_df'] is not None:
+        story.extend(build_smart_analysis_section(styles, smart_analysis, stats['clean_df']))
 
-    # Análise inteligente (NOVA SEÇÃO)
+    # Análise inteligente (NOVA SEÇÃO) - Mantido para compatibilidade
     story.extend(build_smart_analysis(styles, stats))
 
     # Resumo executivo (já contém as assinaturas)

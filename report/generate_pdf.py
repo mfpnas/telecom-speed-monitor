@@ -4,7 +4,7 @@
 import pandas as pd
 import tempfile
 from .stats import clean_data, compute_statistics, compute_success_rates
-from .plots import generate_comparison_plots
+from .plots import generate_comparison_plots, generate_smart_analysis
 from .pdf_builder import build_pdf
 from .formatters import data_extenso
 
@@ -71,6 +71,7 @@ def generate_report_from_dataframe(
     stats = compute_statistics(clean, plan_download, plan_upload)
     stats['clean_df'] = clean
 
+    # Calcular métricas de perda financeira
     overall_median_dl = stats['overall_median_dl']
     pct_global = (overall_median_dl / plan_download) * 100 if overall_median_dl > 0 else 0
     perda_mensal = valor_mensal * (1 - pct_global/100)
@@ -90,15 +91,21 @@ def generate_report_from_dataframe(
     stats['plan_upload'] = plan_upload
     stats['num_clientes'] = num_clientes
 
+    # Gerar gráficos
     graph_dir = tempfile.mkdtemp()
     df_speed = clean[clean['Tool'] == 'speedtest-cli']
     df_librespeed = clean[clean['Tool'] == 'librespeed']
     comparison_images = generate_comparison_plots(df_speed, df_librespeed, graph_dir)
+    
+    # Gerar análise inteligente
+    smart_analysis = generate_smart_analysis(clean)
+    stats['smart_analysis'] = smart_analysis
 
+    # Construir PDF
     output_path = build_pdf(
         output_path, stats, client_name, plan_name, isp_name,
         attorney_name, address, bill_path, success_data,
-        comparison_images, graph_dir
+        comparison_images, graph_dir, smart_analysis
     )
 
     print(f"PDF gerado com sucesso: {output_path}")
