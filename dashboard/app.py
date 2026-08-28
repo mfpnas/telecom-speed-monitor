@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import pytz
 from dashboard.data_loader import load_data
 from dashboard.filters import apply_time_filters
@@ -49,6 +50,7 @@ DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
 DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
 LOG_DIR = "/app/data/logs"
 
+# CSS para responsividade mobile
 st.markdown("""
 <style>
     @media only screen and (max-width: 600px) {
@@ -82,11 +84,13 @@ def main():
     )
     st.title("📡 Telecom Speed Monitor")
 
+    # Carregar dados
     df = load_data(LOG_DIR)
     if df.empty:
-        st.warning("Nenhum dado encontrado. Aguarde o coletor iniciar.")
+        st.warning("No data found. Please wait for the collector to start.")
         st.stop()
 
+    # SIDEBAR: TIMEZONE
     st.sidebar.header("🌐 Timezone Settings")
     timezone_str = st.sidebar.selectbox(
         "Select Timezone",
@@ -99,6 +103,7 @@ def main():
         user_tz = pytz.UTC
         timezone_str = "UTC"
 
+    # SIDEBAR: FILTERS
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Filters")
     tools = st.sidebar.multiselect("Tools", df['Tool'].unique(), default=df['Tool'].unique())
@@ -110,29 +115,32 @@ def main():
     start_date = st.sidebar.date_input("Start", min_date, min_value=min_date, max_value=max_date, key="start_date")
     end_date = st.sidebar.date_input("End", max_date, min_value=min_date, max_value=max_date, key="end_date")
 
+    # PERÍODO
     st.markdown("---")
     period_options = [
-        "Últimas 6 horas",
-        "Últimas 12 horas",
-        "Últimas 24 horas",
-        "Últimos 3 dias",
-        "Últimos 7 dias",
-        "Completo"
+        "Last 6 hours",
+        "Last 12 hours",
+        "Last 24 hours",
+        "Last 3 days",
+        "Last 7 days",
+        "Complete"
     ]
     selected_period = st.selectbox(
-        "📅 Período de exibição",
+        "📅 Display Period",
         period_options,
         index=0,
-        help="Selecione o intervalo de tempo para exibição dos dados"
+        help="Select the time range for data display"
     )
 
+    # APLICAR FILTROS
     filtered = apply_time_filters(df, tools, start_date, end_date, selected_period)
     if filtered.empty:
-        st.warning("Nenhum dado com os filtros selecionados.")
+        st.warning("No data with the selected filters.")
         st.stop()
 
     filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
 
+    # MÉTRICAS
     st.subheader("📊 Summary")
     col_metrics = st.columns(4)
 
@@ -149,10 +157,11 @@ def main():
     with col_metrics[3]:
         st.metric("Avg Ping", f"{avg_ping:.1f} ms")
 
+    # TABS
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📈 Time Series", "📊 Boxplot", "📉 Scatter",
         "📅 Throttling", "🗺️ Server Map", "📋 Raw Data",
-        "🧠 Análise Inteligente"
+        "🧠 Smart Analysis"
     ])
 
     with tab1:
@@ -215,7 +224,8 @@ def main():
             subset=['Server ID', 'Server Name', 'Server Lat', 'Server Lon']
         )
         if not server_locations.empty:
-            fig_map = px.scatter_mapbox(
+            # CORREÇÃO: usa px.scatter_map em vez de px.scatter_mapbox
+            fig_map = px.scatter_map(
                 server_locations,
                 lat='Server Lat',
                 lon='Server Lon',
@@ -223,11 +233,9 @@ def main():
                 hover_name='Server Name',
                 hover_data=['Sponsor', 'Distance'],
                 title='Servers Used for Tests',
-                mapbox_style='open-street-map',
                 zoom=4,
                 height=400
             )
-            fig_map.update_layout(mapbox_style="open-street-map")
             st.plotly_chart(fig_map, width='stretch')
         else:
             st.info("No server location data available.")
@@ -250,10 +258,10 @@ def main():
         )
 
     with tab7:
-        st.subheader("🧠 Análise Inteligente por Dia e Horário")
+        st.subheader("🧠 Smart Analysis by Day and Time")
         
         if filtered.empty:
-            st.warning("Sem dados suficientes para análise.")
+            st.warning("Not enough data for analysis.")
         else:
             filtered['Hour'] = filtered['Timestamp_local'].dt.hour
             filtered['DayOfWeek'] = filtered['Timestamp_local'].dt.day_name()
@@ -264,33 +272,35 @@ def main():
             filtered['Download_Mbps'] = filtered['Download'] / 1e6
             filtered['Upload_Mbps'] = filtered['Upload'] / 1e6
             
+            # Heatmap de Download
             pivot = filtered.pivot_table(index='DayNum', columns='Hour', values='Download_Mbps', aggfunc='mean')
             pivot = pivot.reindex(index=range(7), columns=range(24))
             
             fig_heatmap = px.imshow(
                 pivot,
-                labels=dict(x="Hora do Dia", y="Dia da Semana", color="Download (Mbps)"),
+                labels=dict(x="Hour of Day", y="Day of Week", color="Download (Mbps)"),
                 x=[f"{h:02d}:00" for h in range(24)],
-                y=['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
-                title="Heatmap: Download Médio por Dia da Semana e Hora",
+                y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                title="Heatmap: Average Download by Day of Week and Hour",
                 color_continuous_scale='YlOrRd'
             )
             st.plotly_chart(fig_heatmap, width='stretch')
             
+            # Heatmap de Upload
             pivot_ul = filtered.pivot_table(index='DayNum', columns='Hour', values='Upload_Mbps', aggfunc='mean')
             pivot_ul = pivot_ul.reindex(index=range(7), columns=range(24))
             
             fig_heatmap_ul = px.imshow(
                 pivot_ul,
-                labels=dict(x="Hora do Dia", y="Dia da Semana", color="Upload (Mbps)"),
+                labels=dict(x="Hour of Day", y="Day of Week", color="Upload (Mbps)"),
                 x=[f"{h:02d}:00" for h in range(24)],
-                y=['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
-                title="Heatmap: Upload Médio por Dia da Semana e Hora",
+                y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                title="Heatmap: Average Upload by Day of Week and Hour",
                 color_continuous_scale='YlGnBu'
             )
             st.plotly_chart(fig_heatmap_ul, width='stretch')
             
-            st.markdown("### 📊 Resumo da Análise")
+            st.markdown("### 📊 Analysis Summary")
             
             threshold_50 = 500 * 0.5
             issues = []
@@ -299,15 +309,15 @@ def main():
                 for hour in range(24):
                     val = pivot.loc[day, hour] if pd.notna(pivot.loc[day, hour]) else None
                     if val is not None and val < threshold_50:
-                        day_name = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][day]
-                        issues.append(f"• {day_name} às {hour:02d}:00 - {val:.1f} Mbps ({val/500*100:.1f}% da contratada)")
+                        day_name = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][day]
+                        issues.append(f"• {day_name} at {hour:02d}:00 - {val:.1f} Mbps ({val/500*100:.1f}% of contract)")
             
             if issues:
-                st.warning("**Horários com velocidade abaixo de 50% da contratada:**")
+                st.warning("**Times with speed below 50% of contracted:**")
                 for issue in issues[:20]:
                     st.write(issue)
             else:
-                st.success("Nenhum horário com velocidade abaixo de 50% da contratada.")
+                st.success("No times with speed below 50% of contracted.")
             
             weekday_avg = filtered[~filtered['IsWeekend']].groupby('Hour')['Download_Mbps'].mean()
             weekend_avg = filtered[filtered['IsWeekend']].groupby('Hour')['Download_Mbps'].mean()
@@ -317,25 +327,26 @@ def main():
                 if hour in weekday_avg.index and hour in weekend_avg.index:
                     diff_pct = ((weekday_avg[hour] - weekend_avg[hour]) / weekday_avg[hour]) * 100 if weekday_avg[hour] > 0 else 0
                     if diff_pct > 20:
-                        throttle_issues.append(f"• {hour:02d}:00 - Redução de {diff_pct:.1f}% nos fins de semana")
+                        throttle_issues.append(f"• {hour:02d}:00 - {diff_pct:.1f}% reduction on weekends")
             
             if throttle_issues:
-                st.warning("**Possíveis horários de throttling (diferença > 20%):**")
+                st.warning("**Possible throttling times (difference > 20%):**")
                 for issue in throttle_issues[:20]:
                     st.write(issue)
             else:
-                st.success("Nenhum horário com throttling detectado.")
+                st.success("No throttling detected.")
             
             day_avg = filtered.groupby('DayNum')['Download_Mbps'].mean().reindex(range(7))
             worst_day_idx = day_avg.idxmin()
-            worst_day = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][worst_day_idx]
+            worst_day = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][worst_day_idx]
             worst_day_value = day_avg[worst_day_idx]
             
-            st.info(f"**Pior dia da semana:** {worst_day} com média de {worst_day_value:.1f} Mbps ({worst_day_value/500*100:.1f}% da contratada)")
+            st.info(f"**Worst day of week:** {worst_day} with average of {worst_day_value:.1f} Mbps ({worst_day_value/500*100:.1f}% of contract)")
             
             st.markdown("---")
-            st.markdown("**Conclusão:** A análise identifica padrões de degradação de velocidade em horários específicos, que podem indicar problemas de infraestrutura do provedor ou práticas de gerenciamento de tráfego (throttling).")
+            st.markdown("**Conclusion:** Analysis identifies patterns of speed degradation at specific times, which may indicate provider infrastructure issues or traffic management practices (throttling).")
 
+    # EXPORTAR PARA PDF (SIDEBAR)
     st.sidebar.markdown("---")
     st.sidebar.subheader("📄 Generate PDF Report")
 
