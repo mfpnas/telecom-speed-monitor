@@ -12,7 +12,7 @@ from .sections import (
     build_methodology, build_statistics, build_contracted_speed,
     build_financial_loss, build_legal_foundation, build_recommendations,
     build_appendix, build_executive_summary,
-    build_smart_analysis  # <-- Adicionado
+    build_smart_analysis
 )
 import pandas as pd
 
