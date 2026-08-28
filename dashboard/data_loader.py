@@ -4,7 +4,7 @@ import os
 import glob
 import pandas as pd
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 @st.cache_data(ttl=300)
@@ -22,8 +22,8 @@ def load_data(log_dir: str, max_days: int = 7) -> pd.DataFrame:
     all_files = glob.glob(os.path.join(log_dir, '*_speed_logs.csv'))
     dfs = []
     
-    # Data limite para filtrar
-    cutoff = datetime.utcnow() - timedelta(days=max_days)
+    # Data limite para filtrar (timezone-aware para comparar com Timestamp UTC)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_days)
     
     for f in all_files:
         tool = os.path.basename(f).replace('_speed_logs.csv', '')
@@ -35,10 +35,10 @@ def load_data(log_dir: str, max_days: int = 7) -> pd.DataFrame:
             continue
         df['Tool'] = tool
         if 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
         elif 'timestamp' in df.columns:
             df.rename(columns={'timestamp': 'Timestamp'}, inplace=True)
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
         else:
             mtime = os.path.getmtime(f)
             df['Timestamp'] = pd.to_datetime(mtime, unit='s', utc=True)
