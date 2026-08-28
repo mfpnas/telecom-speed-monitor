@@ -50,7 +50,9 @@ DEFAULT_PLAN = "VIVO TOTAL – PRO (500/250 Mbps)"
 DEFAULT_CLIENT = "Mauricio Faria Palma Nascimento"
 LOG_DIR = "/app/data/logs"
 
-# CSS para responsividade mobile
+# Configuração para otimização
+MAX_POINTS_PER_TOOL = 500  # Limite de pontos por ferramenta para renderização
+
 st.markdown("""
 <style>
     @media only screen and (max-width: 600px) {
@@ -76,6 +78,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=60)
+def downsample_data(df: pd.DataFrame, max_points: int = MAX_POINTS_PER_TOOL) -> pd.DataFrame:
+    """Reduz a quantidade de pontos para renderização, preservando a tendência."""
+    if len(df) <= max_points:
+        return df
+    
+    # Agrupa por ferramenta e faz downsample mantendo a tendência
+    sampled = []
+    for tool in df['Tool'].unique():
+        tool_df = df[df['Tool'] == tool]
+        if len(tool_df) > max_points:
+            # Seleciona pontos uniformemente distribuídos
+            indices = np.linspace(0, len(tool_df)-1, max_points).astype(int)
+            tool_df = tool_df.iloc[indices]
+        sampled.append(tool_df)
+    return pd.concat(sampled, ignore_index=True)
+
+
 def main():
     st.set_page_config(
         layout="wide", 
@@ -84,8 +104,8 @@ def main():
     )
     st.title("📡 Telecom Speed Monitor")
 
-    # Carregar dados
-    df = load_data(LOG_DIR)
+    # Carregar dados (apenas últimos 7 dias por padrão)
+    df = load_data(LOG_DIR, max_days=7)
     if df.empty:
         st.warning("No data found. Please wait for the collector to start.")
         st.stop()
@@ -140,6 +160,9 @@ def main():
 
     filtered['Timestamp_local'] = filtered['Timestamp'].dt.tz_convert(user_tz)
 
+    # DOWNSAMPLE para melhorar performance
+    filtered_display = downsample_data(filtered)
+
     # MÉTRICAS
     st.subheader("📊 Summary")
     col_metrics = st.columns(4)
@@ -165,7 +188,7 @@ def main():
     ])
 
     with tab1:
-        fig1 = px.line(filtered, x='Timestamp_local', y='Download', color='Tool',
+        fig1 = px.line(filtered_display, x='Timestamp_local', y='Download', color='Tool',
                        title='Download Evolution (bps)')
         fig1.update_xaxes(
             tickformat="%H:%M\n%m/%d",
@@ -174,7 +197,7 @@ def main():
         )
         st.plotly_chart(fig1, width='stretch')
 
-        fig2 = px.line(filtered, x='Timestamp_local', y='Upload', color='Tool',
+        fig2 = px.line(filtered_display, x='Timestamp_local', y='Upload', color='Tool',
                        title='Upload Evolution (bps)')
         fig2.update_xaxes(
             tickformat="%H:%M\n%m/%d",
@@ -184,16 +207,16 @@ def main():
         st.plotly_chart(fig2, width='stretch')
 
     with tab2:
-        fig3 = px.box(filtered, x='Tool', y='Download', color='Tool',
+        fig3 = px.box(filtered_display, x='Tool', y='Download', color='Tool',
                       title='Download Distribution by Tool')
         st.plotly_chart(fig3, width='stretch')
 
-        fig4 = px.box(filtered, x='Tool', y='Ping', color='Tool',
+        fig4 = px.box(filtered_display, x='Tool', y='Ping', color='Tool',
                       title='Ping Distribution by Tool')
         st.plotly_chart(fig4, width='stretch')
 
     with tab3:
-        fig5 = px.scatter(filtered, x='Ping', y='Download', color='Tool',
+        fig5 = px.scatter(filtered_display, x='Ping', y='Download', color='Tool',
                           hover_data=['Timestamp_local', 'Server Name'],
                           title='Ping vs Download (bps)')
         st.plotly_chart(fig5, width='stretch')
