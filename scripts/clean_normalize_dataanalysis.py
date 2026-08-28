@@ -1,300 +1,215 @@
 #!/usr/bin/env python3
 """
-Script de Limpeza, Normalização e Análise de Dados do Telecom Speed Monitor.
+Script de Limpeza, Normalização e Análise dos Dados do Telecom Speed Monitor.
 
-Este script:
+Executa:
 1. Carrega todos os CSVs do diretório de logs.
-2. Normaliza as unidades (converte valores do librespeed de Mbps para bps se necessário).
-3. Remove registros inválidos (Download/Upload = 0, Ping > 10000 ms).
-4. Gera estatísticas resumidas e gráficos de verificação.
-5. Salva os dados limpos em um novo diretório.
+2. Limpa dados inválidos (download/upload <= 0, ping > 10000, etc.).
+3. Normaliza unidades (converte Mbps para bps se necessário).
+4. Gera análises e estatísticas.
+5. Gera um resumo em texto.
 
-Uso manual:
-    python3 scripts/clean_normalize_dataanalysis.py
-    python3 scripts/clean_normalize_dataanalysis.py --log_dir /path/to/logs
+Uso:
+    python scripts/clean_normalize_dataanalysis.py
+    python scripts/clean_normalize_dataanalysis.py /caminho/para/logs
 """
 
 import os
+import sys
 import glob
-import argparse
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta, timezone
-
-# Configuração
-DEFAULT_LOG_DIR = "./data/logs"
-CLEAN_DIR = "./data/clean_logs"  # Diretório onde os dados limpos serão salvos
-MAX_PING_MS = 10000  # Limite de ping aceitável
-MIN_SPEED_BPS = 1000  # Velocidade mínima para considerar válida (1 kbps)
+from datetime import datetime, timezone
 
 
-def detect_unit(value: float, tool: str) -> str:
-    """
-    Detecta se o valor de velocidade está em bps ou Mbps.
-    
-    Args:
-        value: Valor de velocidade.
-        tool: Nome da ferramenta que gerou o dado.
-        
-    Returns:
-        'bps' se o valor parece estar em bits por segundo,
-        'mbps' se o valor parece estar em megabits por segundo.
-    """
-    # Para librespeed, valores pequenos (< 100000) provavelmente estão em Mbps
-    if tool == 'librespeed' and value < 100000:
-        return 'mbps'
-    # Para outras ferramentas, valores pequenos podem indicar Mbps ou Kbps
-    elif value < 1000:
-        return 'mbps'  # Assume Mbps para valores muito pequenos
-    else:
-        return 'bps'
-
-
-def normalize_to_bps(value: float, tool: str) -> float:
-    """
-    Converte qualquer valor para bits por segundo (bps).
-    
-    Args:
-        value: Valor de velocidade.
-        tool: Nome da ferramenta que gerou o dado.
-        
-    Returns:
-        Valor em bps.
-    """
-    if pd.isna(value) or value <= 0:
-        return 0
-    
-    unit = detect_unit(value, tool)
-    if unit == 'mbps':
-        return float(value * 1e6)  # Mbps -> bps
-    elif unit == 'bps':
-        return float(value)
-    else:
-        return float(value)
-
-
-def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa e normaliza um DataFrame de dados de velocidade.
-    
-    Args:
-        df: DataFrame bruto.
-        
-    Returns:
-        DataFrame limpo e normalizado.
-    """
-    df = df.copy()
-    
-    # Converter Timestamp para datetime UTC
-    if 'Timestamp' in df.columns:
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
-    
-    # Normalizar unidades de Download e Upload
-    if 'Download' in df.columns:
-        df['Download'] = df.apply(lambda row: normalize_to_bps(row['Download'], row.get('Tool', 'speedtest-cli')), axis=1)
-    if 'Upload' in df.columns:
-        df['Upload'] = df.apply(lambda row: normalize_to_bps(row['Upload'], row.get('Tool', 'speedtest-cli')), axis=1)
-    
-    # Remover registros inválidos
-    if 'Download' in df.columns and 'Upload' in df.columns:
-        df = df[(df['Download'] > MIN_SPEED_BPS) | (df['Upload'] > MIN_SPEED_BPS)]
-        df = df[~((df['Download'] == 0) & (df['Upload'] == 0))]
-    if 'Ping' in df.columns:
-        df = df[df['Ping'] < MAX_PING_MS]
-    
-    # Converter para Mbps para facilitar análise
-    if 'Download' in df.columns:
-        df['Download_Mbps'] = df['Download'] / 1e6
-    if 'Upload' in df.columns:
-        df['Upload_Mbps'] = df['Upload'] / 1e6
-    
-    # Adicionar colunas derivadas
-    if 'Timestamp' in df.columns:
-        df['Hour'] = df['Timestamp'].dt.hour
-        df['DayOfWeek'] = df['Timestamp'].dt.day_name()
-        df['IsWeekend'] = df['DayOfWeek'].isin(['Saturday', 'Sunday'])
-        df['Date'] = df['Timestamp'].dt.date
-    
-    return df
-
-
-def load_and_clean(log_dir: str) -> pd.DataFrame:
-    """
-    Carrega todos os CSVs, limpa e concatena.
-    
-    Args:
-        log_dir: Diretório onde estão os CSVs.
-        
-    Returns:
-        DataFrame limpo e consolidado.
-    """
+def load_data(log_dir: str = "/app/data/logs") -> pd.DataFrame:
+    """Carrega todos os CSVs e adiciona a coluna 'Tool'."""
     all_files = glob.glob(os.path.join(log_dir, '*_speed_logs.csv'))
     dfs = []
-    
     for f in all_files:
         tool = os.path.basename(f).replace('_speed_logs.csv', '')
         try:
             df = pd.read_csv(f)
         except pd.errors.ParserError:
             df = pd.read_csv(f, on_bad_lines='skip')
-        
         if df.empty:
             continue
-        
         df['Tool'] = tool
-        df = clean_dataframe(df)
+        if 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
+        elif 'timestamp' in df.columns:
+            df.rename(columns={'timestamp': 'Timestamp'}, inplace=True)
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], utc=True)
+        else:
+            mtime = os.path.getmtime(f)
+            df['Timestamp'] = pd.to_datetime(mtime, unit='s', utc=True)
         dfs.append(df)
-    
     if not dfs:
         return pd.DataFrame()
-    
     return pd.concat(dfs, ignore_index=True)
 
 
-def generate_summary(df: pd.DataFrame) -> dict:
+def clean_and_normalize(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Gera um resumo estatístico dos dados limpos.
-    
-    Args:
-        df: DataFrame limpo.
-        
-    Returns:
-        Dicionário com estatísticas.
+    Limpa e normaliza os dados.
+    - Converte valores que estão em Mbps para bps.
+    - Remove registros inválidos (Download/Upload <= 0, Ping > 10000).
+    - Converte colunas numéricas para float.
     """
-    summary = {
-        'total_records': len(df),
-        'tools': df['Tool'].value_counts().to_dict(),
-        'date_range': (df['Timestamp'].min(), df['Timestamp'].max()) if not df.empty else None,
-        'download_stats': {
-            'mean': df['Download_Mbps'].mean() if not df.empty else 0,
-            'median': df['Download_Mbps'].median() if not df.empty else 0,
-            'min': df['Download_Mbps'].min() if not df.empty else 0,
-            'max': df['Download_Mbps'].max() if not df.empty else 0,
-        },
-        'upload_stats': {
-            'mean': df['Upload_Mbps'].mean() if not df.empty else 0,
-            'median': df['Upload_Mbps'].median() if not df.empty else 0,
-        },
-        'ping_stats': {
-            'mean': df['Ping'].mean() if not df.empty else 0,
-            'median': df['Ping'].median() if not df.empty else 0,
-        },
-        'interruptions': ((df['Download'] == 0) | (df['Upload'] == 0)).sum() if not df.empty else 0,
-        'invalid_records_removed': 0  # Será preenchido manualmente pelo usuário
-    }
+    df = df.copy()
     
-    return summary
+    # Converter colunas numéricas para float
+    num_cols = ['Download', 'Upload', 'Ping']
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Função para detectar e converter Mbps para bps
+    def to_bps(value):
+        if pd.isna(value) or value == 0:
+            return value
+        # Se o valor for menor que 100000, assume que está em Mbps
+        if abs(value) < 100000:
+            return value * 1e6
+        return value
+    
+    # Aplicar conversão apenas se necessário (detecta valores extremamente baixos)
+    # Se a média de Download for < 100000, aplica conversão
+    if 'Download' in df.columns and 'Upload' in df.columns:
+        avg_dl = df['Download'].mean()
+        avg_ul = df['Upload'].mean()
+        if avg_dl < 100000 or avg_ul < 100000:
+            df['Download'] = df['Download'].apply(to_bps)
+            df['Upload'] = df['Upload'].apply(to_bps)
+    
+    # Remover registros inválidos
+    if 'Download' in df.columns:
+        df = df[df['Download'] > 0]
+    if 'Upload' in df.columns:
+        df = df[df['Upload'] > 0]
+    if 'Ping' in df.columns:
+        df = df[df['Ping'] < 10000]
+    
+    # Converter para Mbps para análise
+    df['Download_Mbps'] = df['Download'] / 1e6
+    df['Upload_Mbps'] = df['Upload'] / 1e6
+    
+    # Extrair dia da semana e hora
+    df['DayOfWeek'] = df['Timestamp'].dt.day_name()
+    df['Hour'] = df['Timestamp'].dt.hour
+    df['IsWeekend'] = df['DayOfWeek'].isin(['Saturday', 'Sunday'])
+    
+    return df
 
 
-def save_clean_data(df: pd.DataFrame, output_dir: str):
-    """
-    Salva os dados limpos em CSVs separados por ferramenta.
+def analyze_data(df: pd.DataFrame) -> dict:
+    """Gera estatísticas e análises principais."""
+    stats = {}
     
-    Args:
-        df: DataFrame limpo.
-        output_dir: Diretório de saída.
-    """
-    os.makedirs(output_dir, exist_ok=True)
+    # Estatísticas gerais
+    stats['total_records'] = len(df)
+    stats['tools'] = df['Tool'].unique().tolist()
+    stats['period'] = f"{df['Timestamp'].min()} to {df['Timestamp'].max()}"
     
-    for tool in df['Tool'].unique():
-        tool_df = df[df['Tool'] == tool]
-        output_path = os.path.join(output_dir, f"{tool}_speed_logs_clean.csv")
-        tool_df.to_csv(output_path, index=False)
-        print(f"  Saved: {output_path}")
+    if 'Download_Mbps' in df.columns:
+        stats['download_stats'] = df['Download_Mbps'].describe().to_dict()
+        stats['upload_stats'] = df['Upload_Mbps'].describe().to_dict()
+    
+    if 'Ping' in df.columns:
+        stats['ping_stats'] = df['Ping'].describe().to_dict()
+    
+    # Análise por dia da semana
+    if 'DayOfWeek' in df.columns:
+        weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        stats['weekday_avg_download'] = df.groupby('DayOfWeek')['Download_Mbps'].mean().reindex(weekday_order).to_dict()
+    
+    # Análise por hora
+    if 'Hour' in df.columns:
+        stats['hourly_avg_download'] = df.groupby('Hour')['Download_Mbps'].mean().to_dict()
+    
+    # Detecção de throttling (diferença entre dias úteis e fins de semana)
+    if 'IsWeekend' in df.columns:
+        weekday_avg = df[~df['IsWeekend']]['Download_Mbps'].mean()
+        weekend_avg = df[df['IsWeekend']]['Download_Mbps'].mean()
+        if weekday_avg > 0:
+            diff_pct = ((weekday_avg - weekend_avg) / weekday_avg) * 100
+            stats['throttling_diff_pct'] = diff_pct
+            stats['throttling_detected'] = diff_pct > 10
+        else:
+            stats['throttling_diff_pct'] = 0
+            stats['throttling_detected'] = False
+    
+    return stats
+
+
+def generate_summary(stats: dict) -> str:
+    """Gera um resumo em texto das análises."""
+    lines = []
+    lines.append("=" * 70)
+    lines.append("RESUMO DA ANÁLISE")
+    lines.append("=" * 70)
+    
+    lines.append(f"Período: {stats.get('period', 'N/A')}")
+    lines.append(f"Total de registros válidos: {stats.get('total_records', 0)}")
+    lines.append(f"Ferramentas: {', '.join(stats.get('tools', []))}")
+    
+    if 'download_stats' in stats:
+        lines.append("\n--- Download (Mbps) ---")
+        for k, v in stats['download_stats'].items():
+            lines.append(f"  {k}: {v:.2f}")
+    
+    if 'upload_stats' in stats:
+        lines.append("\n--- Upload (Mbps) ---")
+        for k, v in stats['upload_stats'].items():
+            lines.append(f"  {k}: {v:.2f}")
+    
+    if 'ping_stats' in stats:
+        lines.append("\n--- Ping (ms) ---")
+        for k, v in stats['ping_stats'].items():
+            lines.append(f"  {k}: {v:.2f}")
+    
+    if 'weekday_avg_download' in stats:
+        lines.append("\n--- Média Download por Dia da Semana (Mbps) ---")
+        for day, val in stats['weekday_avg_download'].items():
+            lines.append(f"  {day}: {val:.2f}")
+    
+    if 'hourly_avg_download' in stats:
+        lines.append("\n--- Média Download por Hora (Mbps) ---")
+        for hour, val in stats['hourly_avg_download'].items():
+            lines.append(f"  {hour:02d}:00 - {val:.2f}")
+    
+    if 'throttling_detected' in stats:
+        lines.append("\n--- Detecção de Throttling ---")
+        lines.append(f"  Diferença entre dias úteis e fins de semana: {stats['throttling_diff_pct']:.2f}%")
+        lines.append(f"  Throttling detectado: {'SIM' if stats['throttling_detected'] else 'NÃO'}")
+    
+    lines.append("=" * 70)
+    return "\n".join(lines)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Limpeza e normalização de dados do Telecom Speed Monitor')
-    parser.add_argument('--log_dir', default=DEFAULT_LOG_DIR, help='Diretório com os CSVs originais')
-    parser.add_argument('--output_dir', default=CLEAN_DIR, help='Diretório para salvar os dados limpos')
-    parser.add_argument('--analyze', action='store_true', help='Gerar gráficos de análise')
-    args = parser.parse_args()
-
-    print("=" * 60)
-    print("Telecom Speed Monitor - Limpeza e Normalização de Dados")
-    print("=" * 60)
+    # Determinar diretório de logs
+    log_dir = sys.argv[1] if len(sys.argv) > 1 else "/app/data/logs"
+    if not os.path.isdir(log_dir):
+        log_dir = os.path.join(os.getcwd(), "data", "logs")
     
-    print(f"\n📂 Diretório de logs: {args.log_dir}")
-    print(f"💾 Diretório de saída: {args.output_dir}")
+    print(f"Carregando dados de: {log_dir}")
+    df_raw = load_data(log_dir)
+    print(f"Dados brutos carregados: {len(df_raw)} registros")
     
-    # Carregar e limpar dados
-    print("\n🔄 Carregando e limpando dados...")
-    df = load_and_clean(args.log_dir)
+    print("\nLimpando e normalizando dados...")
+    df_clean = clean_and_normalize(df_raw)
+    print(f"Dados após limpeza: {len(df_clean)} registros")
     
-    if df.empty:
-        print("❌ Nenhum dado válido encontrado.")
-        return
+    print("\nExecutando análise...")
+    stats = analyze_data(df_clean)
     
-    print(f"✅ Dados carregados: {len(df)} registros válidos")
-    
-    # Resumo
-    summary = generate_summary(df)
-    
-    print("\n📊 RESUMO DOS DADOS LIMPOS:")
-    print(f"  Total de registros: {summary['total_records']}")
-    print(f"  Ferramentas: {summary['tools']}")
-    print(f"  Período: {summary['date_range'][0].strftime('%Y-%m-%d %H:%M')} a {summary['date_range'][1].strftime('%Y-%m-%d %H:%M')}")
-    print(f"  Download médio: {summary['download_stats']['mean']:.2f} Mbps")
-    print(f"  Download mediano: {summary['download_stats']['median']:.2f} Mbps")
-    print(f"  Upload médio: {summary['upload_stats']['mean']:.2f} Mbps")
-    print(f"  Upload mediano: {summary['upload_stats']['median']:.2f} Mbps")
-    print(f"  Ping médio: {summary['ping_stats']['mean']:.2f} ms")
-    print(f"  Ping mediano: {summary['ping_stats']['median']:.2f} ms")
-    print(f"  Interrupções detectadas: {summary['interruptions']}")
+    print("\n" + generate_summary(stats))
     
     # Salvar dados limpos
-    print("\n💾 Salvando dados limpos...")
-    save_clean_data(df, args.output_dir)
-    
-    # Análise opcional
-    if args.analyze:
-        print("\n📈 Gerando gráficos de análise...")
-        try:
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-            
-            # Configuração de estilo
-            sns.set_style("whitegrid")
-            plt.rcParams['figure.figsize'] = (12, 6)
-            
-            # Criar diretório para gráficos
-            plots_dir = os.path.join(args.output_dir, 'plots')
-            os.makedirs(plots_dir, exist_ok=True)
-            
-            # 1. Distribuição de Download por ferramenta
-            plt.figure(figsize=(12, 6))
-            sns.histplot(data=df, x='Download_Mbps', hue='Tool', kde=True, alpha=0.6)
-            plt.title('Distribuição de Download por Ferramenta')
-            plt.xlabel('Download (Mbps)')
-            plt.savefig(os.path.join(plots_dir, 'download_distribution.png'), dpi=150, bbox_inches='tight')
-            plt.close()
-            
-            # 2. Boxplot por ferramenta
-            plt.figure(figsize=(12, 6))
-            sns.boxplot(data=df, x='Tool', y='Download_Mbps')
-            plt.title('Download por Ferramenta')
-            plt.ylabel('Download (Mbps)')
-            plt.savefig(os.path.join(plots_dir, 'download_boxplot.png'), dpi=150, bbox_inches='tight')
-            plt.close()
-            
-            # 3. Série temporal
-            plt.figure(figsize=(14, 6))
-            for tool in df['Tool'].unique():
-                tool_df = df[df['Tool'] == tool]
-                plt.plot(tool_df['Timestamp'], tool_df['Download_Mbps'], alpha=0.7, label=tool)
-            plt.title('Evolução do Download ao Longo do Tempo')
-            plt.ylabel('Download (Mbps)')
-            plt.legend()
-            plt.savefig(os.path.join(plots_dir, 'time_series_download.png'), dpi=150, bbox_inches='tight')
-            plt.close()
-            
-            print(f"  Gráficos salvos em: {plots_dir}")
-        except ImportError:
-            print("  ⚠️ matplotlib não disponível. Instale com: pip install matplotlib seaborn")
-    
-    print("\n✅ Processo concluído com sucesso!")
+    output_path = os.path.join(log_dir, "clean_normalized_data.csv")
+    df_clean.to_csv(output_path, index=False)
+    print(f"\nDados limpos salvos em: {output_path}")
 
 
 if __name__ == "__main__":

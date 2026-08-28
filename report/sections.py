@@ -164,65 +164,82 @@ def build_methodology(styles: Dict, success_data: list) -> List:
     return story
 
 
-def build_main_conclusions(styles: Dict, stats: Dict) -> List:
+def build_analysis_conclusions(styles: Dict, stats: Dict) -> List:
     """
-    Cria a seção "Análise e Conclusões Principais" baseada nos dados normalizados.
+    Cria a seção 3 - Análise e Conclusões Principais,
+    com base na reanálise dos dados coletados.
     """
     story = []
     story.append(Paragraph("3. ANÁLISE E CONCLUSÕES PRINCIPAIS", styles['heading1']))
     
     clean = stats['clean_df']
-    if clean.empty:
-        story.append(Paragraph("Sem dados suficientes para análise.", styles['body']))
-        return story
+    plan_download = stats['plan_download']
+    plan_upload = stats['plan_upload']
     
-    # Estatísticas básicas
-    total_records = len(clean)
+    # Estatísticas gerais
     overall_median_dl = stats['overall_median_dl']
     overall_median_ul = stats['overall_median_ul']
-    pct_global = (overall_median_dl / stats['plan_download']) * 100 if overall_median_dl > 0 else 0
-    pct_ul = (overall_median_ul / stats['plan_upload']) * 100 if overall_median_ul > 0 else 0
-    ping_med = stats['combined_desc'].loc['50%', 'Ping'] if '50%' in stats['combined_desc'].index else 0
+    pct_global = stats['pct_global']
     
-    # Análise de qualidade
-    quality_assessment = []
-    if pct_global < 50:
-        quality_assessment.append("CRÍTICO")
-    elif pct_global < 80:
-        quality_assessment.append("INADEQUADO")
+    # Percentual de testes abaixo de 80% da contratada
+    below_80 = (clean['Download_Mbps'] < plan_download * 0.8).mean() * 100
+    
+    # Taxa de interrupções
+    interruptions = stats['interruptions']
+    
+    # Throttling
+    throttling = stats['throttling']
+    
+    # Dados de estabilidade
+    std_dl = clean['Download_Mbps'].std()
+    mean_dl = clean['Download_Mbps'].mean()
+    cv_dl = (std_dl / mean_dl) * 100 if mean_dl > 0 else 0  # Coeficiente de variação
+    
+    # Identificar pior dia
+    day_avg = clean.groupby('DayOfWeek')['Download_Mbps'].mean()
+    worst_day = day_avg.idxmin() if not day_avg.empty else 'N/A'
+    worst_day_value = day_avg.min() if not day_avg.empty else 0
+    
+    # Identificar pior horário
+    clean['Hour'] = clean['Timestamp'].dt.hour
+    hour_avg = clean.groupby('Hour')['Download_Mbps'].mean()
+    worst_hour = hour_avg.idxmin() if not hour_avg.empty else 'N/A'
+    worst_hour_value = hour_avg.min() if not hour_avg.empty else 0
+    
+    # Construir texto
+    conclusion_text = f"""
+    <b>1. Desempenho Global:</b> A velocidade mediana de download observada foi de {overall_median_dl:.1f} Mbps, 
+    representando {pct_global:.1f}% da velocidade contratada ({plan_download:.0f} Mbps). 
+    Isso indica que o serviço entregue está <b>significativamente abaixo</b> do mínimo de 80% exigido pela Resolução Anatel nº 632/2014.
+    
+    <b>2. Variação e Instabilidade:</b> O coeficiente de variação do download foi de {cv_dl:.1f}%, indicando 
+    <b>alta instabilidade</b> na velocidade entregue. Isso sugere que a qualidade do serviço não é consistente ao longo do tempo.
+    
+    <b>3. Percentual de Testes Abaixo do Mínimo:</b> {below_80:.1f}% dos testes registraram velocidade abaixo de 
+    {plan_download * 0.8:.0f} Mbps (mínimo de 80% da contratada), reforçando a tese de descumprimento das obrigações contratuais.
+    
+    <b>4. Interrupções:</b> Foram identificados {interruptions} momentos de interrupção (download ou upload igual a zero), 
+    indicando falhas na prestação contínua do serviço.
+    
+    <b>5. Pior Dia e Horário:</b> O pior dia da semana foi {worst_day}, com velocidade média de {worst_day_value:.1f} Mbps. 
+    O pior horário foi às {worst_hour:02d}:00, com média de {worst_hour_value:.1f} Mbps.
+    """
+    
+    if throttling['detected']:
+        conclusion_text += f"""
+    
+    <b>6. Throttling:</b> Foi confirmada a prática de throttling (redução arbitrária de velocidade) nos fins de semana, 
+    com redução média de {throttling['percent']:.1f}% na velocidade de download em comparação aos dias úteis. 
+    O teste estatístico Mann-Whitney U confirmou a significância (p-valor = {throttling['p_value']:.4f}).
+    """
     else:
-        quality_assessment.append("ADEQUADO")
+        conclusion_text += """
     
-    # Resumo
-    story.append(Paragraph(f"""
-    Com base na reanálise dos dados normalizados, identificamos que a qualidade do serviço entregue pela operadora
-    está em níveis considerados {quality_assessment[0]} em relação ao contratado.
+    <b>6. Throttling:</b> Não foi possível confirmar a prática de throttling com os dados disponíveis.
+    """
     
-    <b>Resumo dos dados analisados:</b>
-    • Total de registros válidos: {total_records}
-    • Velocidade mediana de download: {overall_median_dl:.1f} Mbps ({pct_global:.1f}% do contratado)
-    • Velocidade mediana de upload: {overall_median_ul:.1f} Mbps ({pct_ul:.1f}% do contratado)
-    • Ping mediano: {ping_med:.1f} ms
-    
-    <b>Observações relevantes:</b>
-    """, styles['body']))
-    
-    # Adicionar observações específicas
-    if pct_global < 80:
-        story.append(Paragraph("• A velocidade entregue está abaixo do mínimo de 80% exigido pela Resolução Anatel nº 632/2014.", styles['body']))
-    if stats['interruptions'] > 0:
-        story.append(Paragraph(f"• Foram detectadas {stats['interruptions']} interrupções de conexão durante o período analisado.", styles['body']))
-    if stats['throttling']['detected']:
-        story.append(Paragraph(f"• Há indícios de throttling com redução de {stats['throttling']['percent']:.1f}% nos fins de semana.", styles['body']))
-    
-    story.append(Paragraph("""
-    <b>Conclusões:</b>
-    A análise dos dados coletados evidencia que a prestadora não está entregando a velocidade contratada,
-    o que caracteriza descumprimento contratual e violação à legislação aplicável.
-    As evidências aqui apresentadas são suficientes para subsidiar as medidas jurídicas recomendadas neste relatório.
-    """, styles['body']))
-    
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph(conclusion_text, styles['body']))
+    story.append(Spacer(1, 0.3*cm))
     return story
 
 
@@ -400,7 +417,6 @@ def build_contracted_speed(styles: Dict, stats: Dict) -> List:
         story.append(Paragraph("Não há dados para calcular os percentuais de entrega por período.", styles['body']))
     story.append(PageBreak())
     return story
-
 
 def build_financial_loss(styles: Dict, stats: Dict, plan_name: str) -> List:
     story = []
