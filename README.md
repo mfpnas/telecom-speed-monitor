@@ -15,9 +15,10 @@
 7. [Monitoramento e Saúde](#monitoramento-e-saúde)
 8. [Gerando Relatórios](#gerando-relatórios)
 9. [Solução de Problemas](#solução-de-problemas)
-10. [Estrutura de Diretórios](#estrutura-de-diretórios)
-11. [Como Contribuir](#como-contribuir)
-12. [Licença](#licença)
+10. [Instalação no Synology (NAS)](#instalação-no-synology-nas)
+11. [Estrutura de Diretórios](#estrutura-de-diretórios)
+12. [Como Contribuir](#como-contribuir)
+13. [Licença](#licença)
 
 ---
 
@@ -328,6 +329,273 @@ docker exec -it telecom_dashboard python /app/generate_pdf_report.py \
 ### 4. O PDF não é gerado
 - Verifique se o script `generate_pdf_report.py` existe no container (`docker exec -it telecom_dashboard ls /app/generate_pdf_report.py`).
 - Verifique os logs do dashboard (`docker logs -f telecom_dashboard`).
+
+---
+
+## Instalação no Synology (NAS)
+
+Este procedimento é específico para **Synology NAS** com **Container Manager** (DSM 7.2 ou superior). O projeto roda em containers Docker diretamente na NAS, sem necessidade de um computador externo.
+
+### 📦 Pré‑requisitos no Synology
+
+- **Synology NAS** com **DSM 7.2+**.
+- **Container Manager** instalado (pacote oficial no Centro de Pacotes).
+- **Acesso SSH** habilitado (Painel de Controle → Terminal e SNMP → Habilitar SSH).
+- **Pasta dedicada** em um volume (ex.: `/volume3/docker/`).
+- **Permissões de escrita** na pasta (para os logs e CSVs).
+
+---
+
+### 🔧 Passo 1: Preparar a pasta no volume
+
+Acesse o NAS via SSH (use o usuário `admin` ou equivalente):
+
+```bash
+ssh seu_usuario@ip_do_synology
+```
+
+Crie a pasta do projeto e ajuste as permissões:
+
+```bash
+sudo mkdir -p /volume3/docker/telecom-speed-monitor
+sudo chmod -R 777 /volume3/docker/
+```
+
+---
+
+### 📁 Passo 2: Clonar o projeto (ou transferir os arquivos)
+
+Via SSH:
+
+```bash
+cd /volume3/docker/
+git clone https://github.com/mfpnas/telecom-speed-monitor.git
+cd telecom-speed-monitor
+```
+
+**Alternativa:** Copie a pasta do projeto via **File Station** (SMB) para `/volume3/docker/`.
+
+---
+
+### 🔧 Passo 3: Ajustar os arquivos de configuração
+
+Substitua os arquivos `docker-compose.yml`, `Dockerfile.collector` e `Dockerfile.dashboard` pelos códigos abaixo (otimizados para Synology). Eles já usam `/volume3` e `user: "1026:100"` (padrão do admin em muitos Synology).
+
+**⚠️ Importante:** Para descobrir seu UID/GID, execute `id` no SSH. Ajuste o valor `"1026:100"` conforme necessário.
+
+#### `docker-compose.yml`
+
+```yaml
+services:
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    container_name: telecom_collector
+    user: "1026:100"  # Ajuste conforme seu usuário (execute 'id' no NAS)
+    volumes:
+      - /volume3/docker/telecom-speed-monitor/data:/app/data
+    environment:
+      - INTERVAL=300
+      - LOG_DIR=/app/data/logs
+      - IPERF_SERVERS=iperf-ams-nl.eranium.net,lon.speedtest.clouvider.net,speedtest.uztelecom.uz
+    restart: unless-stopped
+    networks:
+      - telecom_net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: telecom_dashboard
+    user: "1026:100"  # Ajuste conforme seu usuário
+    ports:
+      - "8501:8501"
+    volumes:
+      - /volume3/docker/telecom-speed-monitor/data:/app/data
+    environment:
+      - LOG_DIR=/app/data/logs
+    restart: unless-stopped
+    depends_on:
+      - collector
+    networks:
+      - telecom_net
+
+networks:
+  telecom_net:
+    driver: bridge
+```
+
+#### `Dockerfile.collector`
+
+```dockerfile
+# Estágio 1: compilar librespeed-cli com Go
+FROM golang:1.25 AS librespeed-builder
+ENV GO111MODULE=on
+RUN go install github.com/librespeed/speedtest-cli@latest
+
+# Estágio 2: imagem final
+FROM python:3.11-slim
+
+# Cria usuário não-root (UID 1026, GID 100)
+RUN groupadd -g 100 appuser && \
+    useradd -m -u 1026 -g appuser appuser
+
+# Instala dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    npm \
+    iperf3 \
+    chromium \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Variável para o Puppeteer usar o Chromium do sistema (fast-cli)
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Instala dependências Python do coletor
+COPY requirements.collector.txt /tmp/
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r /tmp/requirements.collector.txt
+
+# Instala speedtest-cli (Ookla)
+RUN --mount=type=cache,target=/root/.cache/pip pip install speedtest-cli
+
+# Instala fast-cli via npm
+RUN --mount=type=cache,target=/root/.npm npm install -g fast-cli
+
+# Copia o binário compilado no estágio anterior
+COPY --from=librespeed-builder /go/bin/speedtest-cli /usr/local/bin/librespeed-cli
+RUN chmod +x /usr/local/bin/librespeed-cli
+
+WORKDIR /app
+COPY collector/ ./collector/
+COPY scripts/ ./scripts/
+
+RUN mkdir -p /app && chown -R appuser:appuser /app
+USER appuser
+
+CMD ["python", "-m", "collector.main"]
+```
+
+#### `Dockerfile.dashboard`
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Cria usuário não-root (UID 1026, GID 100)
+RUN groupadd -g 100 appuser && \
+    useradd -m -u 1026 -g appuser appuser
+
+# Instala dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instala dependências Python
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r requirements.txt
+
+# Copia módulos do projeto
+COPY dashboard/ /app/dashboard/
+COPY report/ /app/report/
+COPY generate_pdf_report.py /app/generate_pdf_report.py
+COPY scripts/ /app/scripts/
+COPY app.py /app/app.py
+
+# Configura Matplotlib para usar /tmp (evita permissões)
+ENV MPLCONFIGDIR=/tmp/matplotlib
+RUN mkdir -p /tmp/matplotlib && chmod 777 /tmp/matplotlib
+
+EXPOSE 8501
+CMD ["streamlit", "run", "app.py"]
+```
+
+---
+
+### 🚀 Passo 4: Buildar e iniciar os containers
+
+No diretório do projeto (`/volume3/docker/telecom-speed-monitor/`):
+
+```bash
+sudo docker compose up -d --build
+```
+
+**Se o comando falhar**, tente:
+
+```bash
+sudo docker-compose up -d --build
+```
+
+---
+
+### 📂 Passo 5: Ajustar permissões do volume de dados
+
+Após a primeira execução, os containers criarão a pasta `data`. Ajuste as permissões:
+
+```bash
+sudo chmod -R 777 /volume3/docker/telecom-speed-monitor/data
+```
+
+---
+
+### 🌐 Passo 6: Acessar o dashboard
+
+- **Local:** `http://192.168.15.202:8501`
+- **Importante:** Acesse com **HTTP** (não HTTPS). Se o navegador tentar HTTPS, ocorrerá erro `SSL_ERROR_RX_RECORD_TOO_LONG` porque o Streamlit não suporta HTTPS por padrão.
+
+---
+
+### 🛠️ Passo 7 (Opcional): Configurar HTTPS via Reverse Proxy
+
+Para acessar via HTTPS, crie um **Reverse Proxy** no DSM:
+
+1. Vá em **Painel de Controle → Portal de Login → Avançado → Reverse Proxy**.
+2. Clique em **Criar**.
+3. Configure:
+   - **Origem:** `https://192.168.15.202` (ou seu domínio)
+   - **Destino:** `http://127.0.0.1:8501` (ou o IP do container)
+4. Aplique.
+
+---
+
+### 📊 Passo 8: Monitoramento (Opcional)
+
+O `restart: unless-stopped` já garante que os containers reiniciem após reiniciar o NAS. Para monitoramento manual, execute:
+
+```bash
+sudo docker compose logs -f
+```
+
+Ou crie uma **Tarefa Agendada** no DSM para executar o script `scripts/health_check.sh` a cada X minutos.
+
+---
+
+### ✅ Resumo do Procedimento no Synology
+
+| Etapa | Ação | Descrição |
+|-------|------|-----------|
+| 1 | Criar pasta | `/volume3/docker/telecom-speed-monitor` |
+| 2 | Clonar projeto | `git clone` ou copiar via File Station |
+| 3 | Ajustar arquivos | `docker-compose.yml`, `Dockerfile.*` |
+| 4 | Buildar | `docker compose up -d --build` |
+| 5 | Permissões | `chmod 777` na pasta `data` |
+| 6 | Acessar | `http://192.168.15.202:8501` (HTTP) |
+| 7 | (Opcional) HTTPS | Reverse Proxy no DSM |
+| 8 | Monitorar | `docker compose logs -f` |
+
+---
+
+### 🔍 Solução de Problemas no Synology
+
+| Problema | Solução |
+|----------|---------|
+| Erro de permissão no volume | `sudo chmod -R 777 /volume3/docker/` |
+| Container não inicia | Verifique os logs: `docker compose logs -f` |
+| Porta 8501 ocupada | Altere para `8502:8501` no `docker-compose.yml` |
+| Erro SSL ao acessar | Use `http://` em vez de `https://` |
+| `npx` não encontrado | Instale `nodejs`/`npm` no `Dockerfile.collector` (já incluído) |
+| `fast-cli` não roda | Verifique se `chromium` está instalado (já incluído) |
 
 ---
 
